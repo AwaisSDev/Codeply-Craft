@@ -13,13 +13,13 @@ use crate::ui::btn;
 pub fn popover(s: &App, t: &Theme, a: &Agent) -> El {
     let mut idle = a.clone();
     idle.state = crate::model::AgentState::Idle;
-    col().key("appearance").w(300.0).padding(14.0).gap(12.0).radius(14.0)
+    col().key("appearance").w(300.0).padding(14.0).gap(12.0).radius(14.0).continuous_corners()
         .fill(t.popup).border(1.0, t.control_border).shadow(12.0, 32.0, t.shadow)
         .anchored(format!("more/{}", a.id), Side::Right, Align::Start, 8.0)
         .role("dialog").label(format!("{}'s appearance", a.name))
         .modal(true, |s: &mut App| s.appearance = None)
         .child(row().gap(12.0).center_y()
-            .child(el().size(56.0, 56.0).radius(14.0).fill(t.well).center().child(bot::agent(&idle, 46.0)))
+            .child(el().size(56.0, 56.0).radius(14.0).continuous_corners().fill(t.well).center().child(bot::agent(&idle, 46.0)))
             .child(col().grow(1.0)
                 .child(text("Appearance").font(ui(14.0, 650.0)).color(t.text))
                 .child(text(a.name.clone()).font(ui(12.5, 400.0)).color(t.faint))))
@@ -58,7 +58,7 @@ pub fn pickers(t: &Theme, a: &Agent) -> El {
         let mut look = a.look.clone();
         look.shape = shape;
         let id = a.id.clone();
-        el().key(format!("pick-shape/{}/{shape:?}", a.id)).size(28.0, 28.0).radius(7.0).center().role("radio").checked(on).label(format!("{shape:?}"))
+        el().key(format!("pick-shape/{}/{shape:?}", a.id)).size(28.0, 28.0).radius(7.0).continuous_corners().center().role("radio").checked(on).label(format!("{shape:?}"))
             .fill(if on { t.active } else { rune::Color::TRANSPARENT }).hover(t.hover).border(1.0, if on { t.control_border } else { rune::Color::TRANSPARENT })
             .child(rune::icon(bot::icon_for(&a.color, &look, bot::Eyes::Open), 21.0))
             .on_press(move |s: &mut App| s.set_shape(&id, shape))

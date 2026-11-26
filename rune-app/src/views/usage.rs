@@ -123,7 +123,7 @@ pub fn sheet(s: &App, t: &Theme) -> Option<El> {
         Some(u) if !u.error.is_empty() => note(t, &u.error),
         Some(u) => content(s, t, u),
     };
-    let card = col().key("usage-sheet").w(720.0).max_h(640.0).padding(24.0).gap(18.0).radius(16.0)
+    let card = col().key("usage-sheet").w(720.0).max_h(640.0).padding(24.0).gap(18.0).radius(16.0).continuous_corners()
         .fill(t.card).border(1.0, t.card_border).shadow(16.0, 48.0, theme::rgba(0, 0, 0, 0.5))
         .transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
         .role("dialog").label("Usage")
@@ -152,7 +152,7 @@ fn content(s: &App, t: &Theme, u: &Usage) -> El {
         (plural(longest, "day"), "Longest streak"),
     ];
     let stats = row().w_full().gap(10.0).children(stats.into_iter().map(|(v, l)| {
-        col().w(0.0).grow(1.0).min_w(0.0).gap(4.0).px(12.0).py(10.0).radius(10.0).fill(t.hover)
+        col().w(0.0).grow(1.0).min_w(0.0).gap(4.0).px(12.0).py(10.0).radius(10.0).continuous_corners().fill(t.hover)
             .child(text(v).font(ui(17.0, 650.0)).color(t.text).truncate())
             .child(text(l).font(ui(11.5, 400.0)).color(t.faint).truncate())
     }));
@@ -176,7 +176,7 @@ fn content(s: &App, t: &Theme, u: &Usage) -> El {
         if s.usage_daily {
             for d in 0..7 {
                 let n = start + d;
-                let cell = el().size(CELL, CELL).radius(2.0);
+                let cell = el().size(CELL, CELL).radius(2.0).continuous_corners();
                 column = column.child(if n > today {
                     cell
                 } else {
@@ -199,9 +199,9 @@ fn content(s: &App, t: &Theme, u: &Usage) -> El {
             let key = format!("w{i}");
             let dim = pick.as_deref().is_some_and(|p| p != key);
             for r in 0..7 {
-                column = column.child(el().size(CELL, CELL).radius(2.0).fill(if 6 - r < lit { t.accent } else { t.hover }));
+                column = column.child(el().size(CELL, CELL).radius(2.0).continuous_corners().fill(if 6 - r < lit { t.accent } else { t.hover }));
             }
-            column = column.key(format!("usage-week/{i}")).radius(3.0)
+            column = column.key(format!("usage-week/{i}")).radius(3.0).continuous_corners()
                 .opacity(if dim { 0.28 } else { 1.0 })
                 .help(format!("{} tokens on week of {}", short(total), nice(start)))
                 .role("button").label(format!("{} tokens on week of {}", short(total), nice(start)))
@@ -265,13 +265,13 @@ fn breakdown(t: &Theme, weeks: &[i64], by_day: &HashMap<i64, &UsageDay>, pick: O
             row().w_full().gap(10.0).center_y()
                 .child(text(name).font(ui(12.5, 500.0)).color(t.text).truncate().w(170.0))
                 .child(el().grow(1.0).h(6.0).radius(3.0).fill(t.hover)
-                    .child(el().h_full().w_frac((mt as f32 / top as f32).max(0.02)).radius(3.0).fill(t.accent)))
+                    .child(el().h_full().w_frac((mt as f32 / top as f32).max(0.02)).radius(3.0).continuous_corners().fill(t.accent)))
                 .child(text(short(mt)).font(ui(12.0, 500.0)).color(t.dim).w(52.0))
                 .child(text(format!("{}%", if total > 0 { mt * 100 / total } else { 0 })).font(ui(12.0, 400.0)).color(t.faint).w(36.0))
                 .child(text(plural(mn, "call")).font(ui(12.0, 400.0)).color(t.faint).w(70.0))
         }).collect()
     };
-    Some(col().key("usage-breakdown").w_full().gap(10.0).padding(14.0).radius(12.0).border(1.0, t.card_border)
+    Some(col().key("usage-breakdown").w_full().gap(10.0).padding(14.0).radius(12.0).continuous_corners().border(1.0, t.card_border)
         .child(row().w_full().center_y().gap(8.0)
             .child(text(title).font(ui(13.5, 600.0)).color(t.text))
             .child(text(format!("{} tokens · {}", short(total), plural(calls, "call"))).font(ui(12.0, 400.0)).color(t.faint))

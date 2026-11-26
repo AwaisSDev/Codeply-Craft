@@ -162,6 +162,22 @@ const SCENES: &[Scene] = &[
         s.app_tools("builtin:slack");
     }),
     ("apps-featured", |s| { s.go(View::Integrations); s.integrations = IntegrationsTab::Apps; s.browse_apps(false); }),
+    // Twelve connected: five in view, half the sixth, the rest a scroll away.
+    ("apps-many", |s| {
+        s.go(View::Integrations);
+        s.integrations = IntegrationsTab::Apps;
+        s.browse_apps(false);
+        let more: Vec<model::CatalogApp> = s.data.extra.catalog.iter().filter(|a| !a.builtin).cloned().collect();
+        for mut a in more {
+            if s.data.extra.apps.connected.len() >= 12 {
+                break;
+            }
+            a.connected = true;
+            if !s.data.extra.apps.connected.iter().any(|c| c.slug == a.slug) {
+                s.data.extra.apps.connected.push(a);
+            }
+        }
+    }),
     ("apps-builtin-connected", |s| {
         s.go(View::Integrations);
         s.integrations = IntegrationsTab::Apps;

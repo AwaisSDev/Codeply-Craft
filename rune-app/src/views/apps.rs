@@ -32,6 +32,8 @@ pub struct AppsUi {
     pub title: TextEdit,
     pub header: TextEdit,
     pub add_key: TextEdit,
+    /// Where the Connected list's scroll line sits ([x, y, w, h] in its track), set as it scrolls.
+    pub thumb: rune::Live<[f32; 4]>,
 }
 
 impl Default for AppsUi {
@@ -43,6 +45,7 @@ impl Default for AppsUi {
             title: TextEdit::new(""),
             header: TextEdit::new(""),
             add_key: TextEdit::new("").secure(),
+            thumb: rune::Live::new([0.0, 0.0, 3.0, 0.0]),
         }
     }
 }
@@ -164,7 +167,7 @@ fn banner(s: &App, t: &Theme) -> Option<El> {
     } else {
         btn(t, "Dismiss", None, ButtonKind::Plain).key("apps-dismiss").on_press(dismiss_progress)
     };
-    Some(row().key("apps-banner").gap(12.0).px(14.0).py(10.0).radius(12.0).center_y().fill(fill).border(1.0, ink.alpha(0.28)).role("status")
+    Some(row().key("apps-banner").gap(12.0).px(14.0).py(10.0).radius(12.0).continuous_corners().center_y().fill(fill).border(1.0, ink.alpha(0.28)).role("status")
         .child(line.grow(1.0).min_w(0.0))
         .child(action))
 }
@@ -208,7 +211,7 @@ fn grid_tile(s: &App, t: &Theme, a: &CatalogApp) -> El {
             .children(a.verified.then(|| ico_s("shield-check", 13.0, t.green)))
             .child(text(what).font(ui(12.0, 400.0)).color(t.faint).truncate())
     };
-    col().gap(10.0).padding(12.0).radius(12.0).fill(theme::hex("#181818")).border(1.0, t.border)
+    col().gap(10.0).padding(12.0).radius(12.0).continuous_corners().fill(theme::hex("#181818")).border(1.0, t.border)
         .child(row().gap(10.0).center_y()
             .child(tile(a))
             .child(col().grow(1.0).min_w(0.0)
@@ -218,7 +221,109 @@ fn grid_tile(s: &App, t: &Theme, a: &CatalogApp) -> El {
         .child(row().justify_end().child(button.key(format!("app/{}", a.slug)).on_press(move |s: &mut App| press(s, &app))))
 }
 
+/// A connected row's height; the list shows `CONNECTED_SHOWN` of them and half of the next.
+const CONNECTED_ROW: f32 = 58.0;
+const CONNECTED_GAP: f32 = 2.0;
+const CONNECTED_SHOWN: usize = 5;
+
+/// The connected apps: five in view and half of the sixth, so it's plain there are more, and
+/// the rest a scroll away, with a thin grey line beside them that shows where you are.
+fn connected_list(s: &App, t: &Theme, rows: Vec<El>) -> El {
+    let n = rows.len();
+    let list = col().w_full().gap(CONNECTED_GAP).children(rows);
+    if n <= CONNECTED_SHOWN {
+        return list;
+    }
+    let pitch = CONNECTED_ROW + CONNECTED_GAP;
+    let height = CONNECTED_SHOWN as f32 * pitch + CONNECTED_ROW / 2.0;
+    let thumb = s.apps_ui.thumb.clone();
+    let viewport = col().key("apps-connected").w_full().h(height)
+        .child(list)
+        .scroll(rune::ScrollSpec { stick_bottom: false })
+        .on_scroll_offset(move |at: rune::ScrollPos| {
+            let (view, max) = (at.viewport[1], at.max[1]);
+            let h = (view * view / (view + max).max(1.0)).max(28.0).min(view);
+            let y = if max > 0.0 { at.offset[1] / max * (view - h) } else { 0.0 };
+            thumb.set([0.0, y, 3.0, h]);
+        });
+    // The track: a faint line the whole height, and the brighter part where the view is.
+    let track = el().pin(None, Some(0.0), Some(0.0), Some(0.0)).w(3.0).radius(1.5).fill(t.border.alpha(0.35)).inert()
+        .child(el().absolute(0.0, 0.0).w(3.0).h(28.0).radius(1.5).fill(t.dim.alpha(0.85)).live_rect(&s.apps_ui.thumb));
+    el().w_full().child(viewport).child(track)
+}
+
+/// An open app's page: who it's signed in as, Disconnect, and every tool it gives the agent, by
+/// name, with what it does and whether it asks you first.
+fn app_page(s: &App, t: &Theme, id: &str) -> El {
+    let back = row().key("apps-back").gap(4.0).h(30.0).pl(4.0).pr(10.0).radius(8.0).continuous_corners().center_y().hover(t.hover).role("button").label("Back to apps")
+        .child(ico_s("chevron-left", 16.0, t.dim))
+        .child(text("Apps".to_owned()).font(ui(13.0, 500.0)).color(t.dim))
+        .on_press(|s: &mut App| s.apps_ui.close());
+    let app = s.data.extra.apps.connected.iter().chain(&s.data.extra.catalog).find(|a| a.slug == id);
+    let Some(app) = app else {
+        return col().gap(16.0).child(row().child(back)).child(text("This app is no longer connected.".to_owned()).font(ui(13.5, 400.0)).color(t.dim));
+    };
+    let status = if app.needs_reconnect {
+        text("Sign in again to keep using it.".to_owned()).font(ui(13.0, 400.0)).color(t.warn)
+    } else if !app.account.is_empty() {
+        text(format!("Signed in as {}", app.account)).font(ui(13.0, 400.0)).color(t.faint)
+    } else {
+        text(if app.note.is_empty() { app.domain.clone() } else { app.note.clone() }).font(ui(13.0, 400.0)).color(t.faint).wrap()
+    };
+    let slug = app.slug;
+    let reconnect = app.clone();
+    let head = row().gap(14.0).center_y()
+        .child(tile(app))
+        .child(col().grow(1.0).min_w(0.0).gap(2.0)
+            .child(text(app.name.clone()).font(ui(20.0, 650.0).tracking(-0.2)).color(t.text).truncate())
+            .child(status))
+        .children(app.needs_reconnect.then(|| btn(t, "Sign in again", None, ButtonKind::Blue).key("apps-reconnect").on_press(move |s: &mut App| {
+            s.apps_ui.close();
+            s.connect_app(reconnect.slug);
+        })))
+        .child(btn(t, "Disconnect", None, ButtonKind::Plain).key("apps-disconnect").on_press(move |s: &mut App| {
+            s.disconnect_app(slug);
+            s.apps_ui.close();
+        }));
+    let note = |words: String, ink| text(words).font(ui(13.0, 400.0)).color(ink).wrap();
+    let tools: El = match &s.data.extra.apps.tools {
+        Some((tid, Ok(list))) if tid == id && list.is_empty() => note("It offers no tools.".into(), t.faint),
+        Some((tid, Ok(list))) if tid == id => {
+            let asks = list.iter().filter(|(_, _, read)| !read).count();
+            col().gap(10.0)
+                .child(row().gap(8.0).items_end()
+                    .child(text("Tools".to_owned()).font(ui(15.0, 650.0)).color(t.text))
+                    .child(text(format!("{}", list.len())).font(tabular(13.0, 500.0)).color(t.faint)))
+                .child(note(if asks > 0 {
+                    format!("What the agent can do with {}. The {asks} that send, change or delete something ask you first.", app.name)
+                } else {
+                    format!("What the agent can do with {}. They only read.", app.name)
+                }, t.faint))
+                .child(col().radius(14.0).continuous_corners().border(1.0, t.border).clip_rounded(14.0)
+                    .children(list.iter().enumerate().map(|(i, (name, desc, read))| {
+                        row().key(format!("app-tool/{id}/{name}")).gap(12.0).px(14.0).py(10.0).items_start()
+                            .border_sides([if i == 0 { 0.0 } else { 1.0 }, 0.0, 0.0, 0.0], t.border)
+                            .child(el().mt(1.0).child(ico_s(if *read { "search" } else { "edit" }, 15.0, if *read { t.faint } else { t.warn })))
+                            .child(col().grow(1.0).min_w(0.0).gap(2.0)
+                                .child(text(name.clone()).font(ui(13.5, 600.0)).color(t.text).truncate())
+                                .children((!desc.trim().is_empty()).then(|| text(desc.trim().to_owned()).font(ui(12.5, 400.0)).color(t.dim).wrap().max_lines(2))))
+                            .children((!*read).then(|| el().px(8.0).h(20.0).radius(10.0).center().fill(t.warn.alpha(0.14))
+                                .child(text("Asks first".to_owned()).font(ui(11.0, 600.0)).color(t.warn))))
+                    })))
+        }
+        Some((tid, Err(e))) if tid == id => note(format!("Couldn't list its tools: {e}"), t.warn),
+        _ => wave("Asking the app for its tools", ui(13.0, 400.0), t.faint),
+    };
+    col().key(format!("app-page/{id}")).gap(18.0).max_w(860.0)
+        .child(row().child(back))
+        .child(head)
+        .child(tools)
+}
+
 pub fn body(s: &App, t: &Theme, q: &str) -> El {
+    if let Some(Dialog::Manage(id)) = &s.apps_ui.dialog {
+        return app_page(s, t, id);
+    }
     let a = &s.data.extra.apps;
     let h3 = |label: String| text(label).font(ui(13.0, 600.0)).color(t.dim).mt(8.0);
     let empty = |what: &str| text(what.to_owned()).font(ui(13.5, 400.0)).color(t.faint).py(12.0);
@@ -233,16 +338,18 @@ pub fn body(s: &App, t: &Theme, q: &str) -> El {
             text(if c.note.is_empty() { c.category.to_owned() } else { c.note.clone() }).font(ui(12.5, 400.0)).color(t.faint).truncate()
         };
         enter(
-            row().gap(12.0).px(12.0).py(10.0).radius(12.0).center_y().hover(t.hover)
+            row().key(format!("app-manage/{}", c.slug)).h(CONNECTED_ROW).gap(12.0).px(12.0).mr(10.0).radius(12.0).continuous_corners().center_y().hover(t.hover)
+                .role("button").label(format!("{}: open", c.name))
                 .child(tile(c))
                 .child(col().grow(1.0).min_w(0.0)
                     .child(text(c.name.clone()).font(ui(14.0, 600.0)).color(t.text).truncate())
                     .child(line))
-                .children((c.tools > 0).then(|| text(format!("{} tools", c.tools)).font(tabular(12.0, 400.0)).color(t.faint)))
-                .child(btn(t, "Manage", None, ButtonKind::Plain).key(format!("app-manage/{}", c.slug)).on_press(move |s: &mut App| press(s, &app))),
+                .child(ico_s("chevron-right", 16.0, t.faint))
+                .on_press(move |s: &mut App| press(s, &app)),
             i,
         )
     }).collect();
+    let connected = if connected.is_empty() { empty("Nothing connected yet.") } else { connected_list(s, t, connected) };
 
     // With no search or category, the page opens on Featured: Codeply's own sign-ins, then the
     // vendors' own servers Codeply checked (the catalogue lists them first).
@@ -273,7 +380,7 @@ pub fn body(s: &App, t: &Theme, q: &str) -> El {
     col().gap(12.0)
         .children(banner(s, t))
         .child(h3("Connected".to_owned()))
-        .child(if connected.is_empty() { empty("Nothing connected yet.") } else { col().gap(2.0).children(connected) })
+        .child(connected)
         .children((!featured_tiles.is_empty()).then(|| h3("Featured".to_owned())))
         .children((!featured_tiles.is_empty()).then(|| cards(featured_tiles, 3)))
         .child(row().gap(10.0).center_y().items_end()
@@ -297,14 +404,14 @@ fn field(t: &Theme, label: &str, edit: &TextEdit, access: fn(&mut App) -> &mut T
     let input = if secret { input.on_submit(|s: &mut App, _| submit(s)) } else { input };
     col().gap(5.0)
         .child(text(label.to_owned()).font(ui(12.0, 600.0)).color(t.faint))
-        .child(row().h(38.0).px(12.0).radius(10.0).center_y().fill(theme::hex("#161616")).border(1.0, theme::hex("#2c2c2c")).child(input))
+        .child(row().h(38.0).px(12.0).radius(10.0).continuous_corners().center_y().fill(theme::hex("#161616")).border(1.0, theme::hex("#2c2c2c")).child(input))
 }
 
 /// The open dialog, anchored under the button that opened it.
 pub fn dialog(s: &App, t: &Theme) -> Option<El> {
-    let d = s.apps_ui.dialog.as_ref()?;
+    let d = s.apps_ui.dialog.as_ref().filter(|d| !matches!(d, Dialog::Manage(_)))?;
     let panel = |anchor: String, label: &str| {
-        col().key("apps-dialog").w(380.0).padding(16.0).gap(12.0).radius(14.0)
+        col().key("apps-dialog").w(380.0).padding(16.0).gap(12.0).radius(14.0).continuous_corners()
             .fill(theme::hex("#1f1f1f")).border(1.0, t.control_border).shadow(12.0, 32.0, theme::rgba(0, 0, 0, 0.45))
             .anchored(anchor, Side::Bottom, Align::End, 8.0)
             .role("dialog").label(label.to_owned())
@@ -328,62 +435,9 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
                 .child(field(t, "Key header (optional)", &s.apps_ui.header, |s| &mut s.apps_ui.header, "Authorization", "apps-header", true).grow(1.0).w(0.0))
                 .child(field(t, "Key (optional)", &s.apps_ui.add_key, |s| &mut s.apps_ui.add_key, "Paste it here", "apps-add-key", true).grow(1.0).w(0.0)))
             .child(row().gap(8.0).justify_end().child(cancel).child(btn(t, "Add app", None, ButtonKind::Blue).key("apps-dialog-go").on_press(submit))),
-        Dialog::Manage(id) => manage(s, t, id, panel(format!("app-manage/{id}"), "Manage app")),
+        Dialog::Manage(_) => return None,
     };
     Some(out)
-}
-
-fn manage(s: &App, t: &Theme, id: &str, panel: El) -> El {
-    let app = s.data.extra.apps.connected.iter().chain(&s.data.extra.catalog).find(|a| a.slug == id);
-    let Some(app) = app else {
-        return panel.child(text("This app is no longer connected.".to_owned()).font(ui(13.0, 400.0)).color(t.dim));
-    };
-    let status = if app.needs_reconnect {
-        text("Sign in again to keep using it.".to_owned()).font(ui(12.5, 400.0)).color(t.warn)
-    } else if !app.account.is_empty() {
-        text(format!("Signed in as {}", app.account)).font(ui(12.5, 400.0)).color(t.faint)
-    } else {
-        text(app.domain.clone()).font(ui(12.5, 400.0)).color(t.faint)
-    };
-    let tools: El = match &s.data.extra.apps.tools {
-        Some((tid, Ok(list))) if tid == id => {
-            if list.is_empty() {
-                text("It offers no tools.".to_owned()).font(ui(12.5, 400.0)).color(t.faint)
-            } else {
-                col().gap(2.0)
-                    .child(text(format!("{} tools. Anything that sends, changes or deletes asks you first.", list.len())).font(ui(12.5, 400.0)).color(t.faint).wrap().pb(4.0))
-                    .children(list.iter().take(10).map(|(name, desc, read)| {
-                        row().gap(8.0).center_y().py(3.0)
-                            .child(ico_s(if *read { "search" } else { "edit" }, 14.0, if *read { t.faint } else { t.warn }))
-                            .child(col().grow(1.0).min_w(0.0)
-                                .child(text(name.clone()).font(ui(13.0, 500.0)).color(t.text).truncate())
-                                .child(text(desc.lines().next().unwrap_or_default().to_owned()).font(ui(12.0, 400.0)).color(t.faint).truncate()))
-                    }))
-                    .children((list.len() > 10).then(|| text(format!("and {} more", list.len() - 10)).font(ui(12.0, 400.0)).color(t.faint).pt(4.0)))
-            }
-        }
-        Some((tid, Err(e))) if tid == id => text(format!("Couldn't list its tools: {e}")).font(ui(12.5, 400.0)).color(t.warn).wrap(),
-        _ => text("Asking the app for its tools...".to_owned()).font(ui(12.5, 400.0)).color(t.faint),
-    };
-    let slug = app.slug;
-    let reconnect = app.clone();
-    panel
-        .child(row().gap(12.0).center_y()
-            .child(tile(app))
-            .child(col().grow(1.0).min_w(0.0)
-                .child(text(app.name.clone()).font(ui(15.0, 650.0)).color(t.text).truncate())
-                .child(status)))
-        .child(tools)
-        .child(row().gap(8.0).justify_end()
-            .child(btn(t, "Disconnect", None, ButtonKind::Plain).key("apps-disconnect").on_press(move |s: &mut App| {
-                s.disconnect_app(slug);
-                s.apps_ui.close();
-            }))
-            .children(app.needs_reconnect.then(|| btn(t, "Sign in again", None, ButtonKind::Blue).key("apps-reconnect").on_press(move |s: &mut App| {
-                s.apps_ui.close();
-                s.connect_app(reconnect.slug);
-            })))
-            .child(btn(t, "Done", None, ButtonKind::Plain).key("apps-dialog-cancel").on_press(|s: &mut App| s.apps_ui.close())))
 }
 
 #[cfg(test)]

@@ -16,7 +16,7 @@ pub fn pane(s: &App, t: &Theme) -> El {
     let ports = s.ports_tab;
     let count = if ports { 0 } else { s.port_rows().len() };
     let tab = |key: &str, label: &str, on: bool| {
-        row().key(key.to_owned()).h(26.0).px(10.0).gap(6.0).radius(7.0).center_y().hover(t.hover)
+        row().key(key.to_owned()).h(26.0).px(10.0).gap(6.0).radius(7.0).continuous_corners().center_y().hover(t.hover)
             .fill(if on { t.active } else { Color::TRANSPARENT })
             .role("tab").checked(on).label(label.to_owned())
             .child(text(label.to_owned()).font(ui(13.0, if on { 600.0 } else { 500.0 })).color(if on { t.text } else { t.dim }))

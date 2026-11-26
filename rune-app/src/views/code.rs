@@ -35,7 +35,7 @@ pub fn side(s: &App, t: &Theme) -> El {
             let key = format!("dir/{path}");
             let k = key.clone();
             rows.push(
-                row().key(key).min_h(28.0).py(3.0).pr(8.0).pl(indent).gap(6.0).radius(10.0).center_y().hover(t.hover)
+                row().key(key).min_h(28.0).py(3.0).pr(8.0).pl(indent).gap(6.0).radius(10.0).continuous_corners().center_y().hover(t.hover)
                     .role("button").label(name.clone())
                     .child(ico_s(if collapsed { "chevron-right" } else { "chevron-down" }, 16.0, t.faint))
                     .child(ico_s(if collapsed { "folder" } else { "folder-open" }, 16.0, t.faint))
@@ -46,7 +46,7 @@ pub fn side(s: &App, t: &Theme) -> El {
             let on = code.open.as_deref() == Some(path.as_str());
             let p = path.clone();
             rows.push(
-                row().key(format!("file/{path}")).min_h(28.0).py(3.0).pr(8.0).pl(indent + 22.0).gap(6.0).radius(10.0).center_y().hover(t.hover)
+                row().key(format!("file/{path}")).min_h(28.0).py(3.0).pr(8.0).pl(indent + 22.0).gap(6.0).radius(10.0).continuous_corners().center_y().hover(t.hover)
                     .fill(if on { t.active } else { Color::TRANSPARENT })
                     .role("button").label(name.clone())
                     .child(ico_s("file", 16.0, if on { t.text } else { t.faint }))
@@ -106,7 +106,7 @@ fn tab_bar(s: &App, t: &Theme) -> El {
             .child(ico_s("file", 14.0, if on { t.text } else { t.faint }))
             .child(text(name).font(ui(13.0, if on { 500.0 } else { 400.0 })).color(if on { t.text } else { t.dim }).single_line())
             .children(dirty.then(|| el().size(7.0, 7.0).radius(3.5).fill(t.warn)))
-            .child(el().key(format!("code-tab-close/{path}")).size(20.0, 20.0).radius(5.0).center().hover(t.active).role("button").label("Close tab")
+            .child(el().key(format!("code-tab-close/{path}")).size(20.0, 20.0).radius(5.0).continuous_corners().center().hover(t.active).role("button").label("Close tab")
                 .child(ico_s("close", 12.0, t.faint))
                 .on_press(move |s: &mut App| s.close_tab(&close)))
             .on_press(move |s: &mut App| s.open_file(&open))
@@ -139,7 +139,7 @@ fn run_button(s: &App, t: &Theme) -> El {
     }
     let tip = s.run_plans().first().map_or_else(|| "Nothing to run here".to_owned(), |p| format!("{} (Ctrl F5)\n{}", p.title, p.note()));
     let more_open = s.menu.as_deref() == Some("code-run");
-    row().key("code-run-group").h(32.0).radius(9.0).clip_rounded(9.0).center_y().fill(t.control).border(1.0, t.control_border)
+    row().key("code-run-group").h(32.0).radius(9.0).continuous_corners().clip_rounded(9.0).center_y().fill(t.control).border(1.0, t.control_border)
         .child(row().key("code-run").h_full().px(10.0).gap(6.0).center_y().hover(t.press).role("button").label("Run").help(tip)
             // The triangle icon turned to point right: a play button.
             .child(ico_s("triangle", 13.0, t.green).icon_rotation(std::f32::consts::FRAC_PI_2))
@@ -235,17 +235,17 @@ fn ask_bar(s: &App, t: &Theme) -> El {
         .placeholder("Edit with Wisp: what should change? Enter to send, Esc to close", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Edit with Wisp")
         .on_edit(|s: &mut App| s.edit_mut(EditKey::CodeAsk))
         .on_submit(|s: &mut App, _| s.submit_code_ask());
-    row().key("code-ask-bar").mx(16.0).mt(10.0).px(12.0).h(40.0).gap(10.0).radius(10.0).center_y().clip_rounded(10.0)
+    row().key("code-ask-bar").mx(16.0).mt(10.0).px(12.0).h(40.0).gap(10.0).radius(10.0).continuous_corners().center_y().clip_rounded(10.0)
         .fill(t.composer).border(1.0, t.accent.alpha(0.5)).shadow(6.0, 18.0, crate::theme::rgba(0, 0, 0, 0.3))
         .child(ico_s("sparkle", 15.0, t.accent))
         .child(field)
-        .child(row().h(20.0).px(6.0).radius(5.0).center_y().fill(t.active).child(text("Ctrl K").font(ui(11.0, 600.0)).color(t.dim)))
+        .child(row().h(20.0).px(6.0).radius(5.0).continuous_corners().center_y().fill(t.active).child(text("Ctrl K").font(ui(11.0, 600.0)).color(t.dim)))
 }
 
 /// The pending edit's card: what you asked, and Accept or Reject once Wisp's change is in.
 fn proposal_bar(t: &Theme, p: &crate::model::Proposal) -> El {
-    let keycap = |k: &str| row().h(18.0).px(5.0).radius(4.0).center_y().fill(crate::theme::rgba(255, 255, 255, 0.16)).child(text(k.to_owned()).font(ui(10.5, 600.0)).color(Color::WHITE));
-    let mut bar = row().key("code-proposal").mx(16.0).mt(10.0).px(14.0).py(10.0).gap(10.0).radius(10.0).center_y()
+    let keycap = |k: &str| row().h(18.0).px(5.0).radius(4.0).continuous_corners().center_y().fill(crate::theme::rgba(255, 255, 255, 0.16)).child(text(k.to_owned()).font(ui(10.5, 600.0)).color(Color::WHITE));
+    let mut bar = row().key("code-proposal").mx(16.0).mt(10.0).px(14.0).py(10.0).gap(10.0).radius(10.0).continuous_corners().center_y()
         .fill(t.composer).border(1.0, t.composer_border)
         .child(col().grow(1.0).min_w(0.0).gap(3.0)
             .child(text(p.instruction.clone()).font(ui(13.5, 500.0)).color(t.text).wrap())
@@ -255,10 +255,10 @@ fn proposal_bar(t: &Theme, p: &crate::model::Proposal) -> El {
             .child(btn(t, "Stop", None, ButtonKind::Plain).key("code-proposal-stop").on_press(|s: &mut App| { s.reject_proposal(); }));
     } else if p.after.is_some() {
         bar = bar
-            .child(row().key("code-accept").h(28.0).px(10.0).gap(6.0).radius(7.0).center_y().fill(t.accent).role("button").label("Accept")
+            .child(row().key("code-accept").h(28.0).px(10.0).gap(6.0).radius(7.0).continuous_corners().center_y().fill(t.accent).role("button").label("Accept")
                 .child(keycap("Ctrl \u{21b5}")).child(text("Accept").font(ui(12.5, 600.0)).color(Color::WHITE))
                 .on_press(|s: &mut App| { s.accept_proposal(); }))
-            .child(row().key("code-reject").h(28.0).px(10.0).gap(6.0).radius(7.0).center_y().fill(t.control).border(1.0, t.control_border).role("button").label("Reject")
+            .child(row().key("code-reject").h(28.0).px(10.0).gap(6.0).radius(7.0).continuous_corners().center_y().fill(t.control).border(1.0, t.control_border).role("button").label("Reject")
                 .child(text("Esc").font(ui(10.5, 600.0)).color(t.faint)).child(text("Reject").font(ui(12.5, 500.0)).color(t.text))
                 .on_press(|s: &mut App| { s.reject_proposal(); }));
     } else {
@@ -342,7 +342,7 @@ fn editor(s: &App, t: &Theme) -> El {
         Some(row().key("code-ghost").gap(8.0).center_y().absolute(x, row_i as f32 * LINE).h(LINE).inert()
             .child(text(first).font(style).color(t.faint.alpha(0.75)).single_line())
             .children((more > 0).then(|| text(format!("+{more} lines")).font(ui(11.0, 500.0)).color(t.faint)))
-            .child(row().h(16.0).px(5.0).radius(4.0).center_y().fill(t.active).border(1.0, t.control_border)
+            .child(row().h(16.0).px(5.0).radius(4.0).continuous_corners().center_y().fill(t.active).border(1.0, t.control_border)
                 .child(text("Tab").font(ui(10.5, 600.0)).color(t.dim))))
     });
     let body = col().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false })
@@ -372,7 +372,7 @@ pub fn completion(s: &App, t: &Theme) -> Option<El> {
         // What you typed, in bold, when the word starts with it.
         let lead = if it.label.to_lowercase().starts_with(&typed) { typed.len().min(it.label.len()) } else { 0 };
         let lead = if it.label.is_char_boundary(lead) { lead } else { 0 };
-        row().key(format!("code-complete/{i}")).w_full().h(24.0).px(8.0).gap(8.0).radius(6.0).center_y()
+        row().key(format!("code-complete/{i}")).w_full().h(24.0).px(8.0).gap(8.0).radius(6.0).continuous_corners().center_y()
             .fill(if on { t.active } else { Color::TRANSPARENT }).hover(t.hover)
             .role("option").checked(on).label(it.label.clone())
             .child(ico_s(icon, 14.0, if matches!(it.kind, Kind::Keyword | Kind::Snippet) { t.accent } else { t.faint }))
@@ -392,7 +392,7 @@ pub fn completion(s: &App, t: &Theme) -> Option<El> {
         col().w_full().mt(3.0).px(8.0).py(6.0).border_sides([1.0, 0.0, 0.0, 0.0], t.border)
             .child(text(body).font(mono(12.0, 17.0)).color(t.dim).wrap())
     });
-    Some(col().key("code-complete").w(340.0).padding(4.0).gap(1.0).radius(9.0)
+    Some(col().key("code-complete").w(340.0).padding(4.0).gap(1.0).radius(9.0).continuous_corners()
         .fill(t.popup).border(1.0, t.control_border).shadow(8.0, 24.0, t.shadow)
         .anchored("code-caret".to_owned(), rune::Side::Bottom, rune::Align::Start, 2.0)
         .role("listbox").label("Suggestions")
@@ -462,7 +462,7 @@ fn wisp_panel(s: &App, t: &Theme) -> El {
                 .child(text(n.message.clone()).font(ui(13.0, 400.0)).color(t.text).wrap());
             if let Some(fix) = &n.fix {
                 c_card = c_card
-                    .child(el().px(8.0).py(6.0).radius(8.0).fill(t.solid)
+                    .child(el().px(8.0).py(6.0).radius(8.0).continuous_corners().fill(t.solid)
                         .child(text(fix.clone()).font(mono(12.0, 18.0)).color(t.text).wrap()))
                     .child(row().child(btn(t, "Apply", Some("check"), ButtonKind::Green).key(format!("fix/{line}"))
                         .on_press(move |s: &mut App| s.apply_fix(line))));
@@ -544,14 +544,14 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
         CodeDialog::Delete(p) => (format!("Delete {}?", p.rsplit('/').next().unwrap_or(p)), format!("{p} goes for good, unless git has it."), "Delete"),
     };
     let field = (!matches!(d, CodeDialog::Delete(_))).then(|| {
-        row().w_full().h(38.0).px(12.0).radius(10.0).clip_rounded(10.0).center_y().fill(t.field).border(1.0, t.field_border)
+        row().w_full().h(38.0).px(12.0).radius(10.0).continuous_corners().clip_rounded(10.0).center_y().fill(t.field).border(1.0, t.field_border)
             .child(text_input(s.edit(EditKey::FilePath), mono(13.0, 18.0)).key("file-path").single_line().grow(1.0).min_w(0.0).color(t.text)
                 .placeholder("src/new-file.ts", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Path")
                 .on_edit(|s: &mut App| s.edit_mut(EditKey::FilePath))
                 .on_submit(|s: &mut App, _| s.submit_code_dialog()))
     });
     let danger = matches!(d, CodeDialog::Delete(_));
-    let card = rune::col().key("code-dialog").w(440.0).padding(22.0).gap(14.0).radius(16.0)
+    let card = rune::col().key("code-dialog").w(440.0).padding(22.0).gap(14.0).radius(16.0).continuous_corners()
         .fill(t.card).border(1.0, t.card_border).shadow(16.0, 48.0, crate::theme::rgba(0, 0, 0, 0.45))
         .transition(fade_in()).motion(ENTER).role("dialog").label(title.clone())
         .modal(true, |s: &mut App| s.code_dialog = None)
@@ -561,7 +561,7 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
         .children(field)
         .child(row().w_full().gap(8.0).justify_end()
             .child(btn(t, "Cancel", None, ButtonKind::Plain).key("code-dialog-cancel").on_press(|s: &mut App| s.code_dialog = None))
-            .child(row().key("code-dialog-ok").h(32.0).px(14.0).radius(9.0).center_y().fill(if danger { t.red } else { t.accent }).role("button").label(ok)
+            .child(row().key("code-dialog-ok").h(32.0).px(14.0).radius(9.0).continuous_corners().center_y().fill(if danger { t.red } else { t.accent }).role("button").label(ok)
                 .child(text(ok).font(ui(13.0, 600.0)).color(Color::WHITE))
                 .on_press(|s: &mut App| s.submit_code_dialog())));
     Some(col().key("code-scrim").pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).center().fill(crate::theme::rgba(0, 0, 0, 0.4)).child(card))

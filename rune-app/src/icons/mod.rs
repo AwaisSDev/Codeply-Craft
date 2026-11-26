@@ -59,7 +59,7 @@ pub fn ico_app(name: &str, size: f32, color: Color) -> El {
     let logo = name.strip_prefix("app-").and_then(domain_of).and_then(|d| crate::favicon::app_logo(d, ""));
     match logo {
         Some(px) => el().size(size, size).child(ico_s(name, size, color.alpha(0.35)))
-            .child(el().absolute(0.0, 0.0).size(size, size).radius(3.0).pixels_fit(&px, rune::SurfaceFit::Fit).inert()),
+            .child(el().absolute(0.0, 0.0).size(size, size).radius(3.0).continuous_corners().pixels_fit(&px, rune::SurfaceFit::Fit).inert()),
         None => ico_s(name, size, color),
     }
 }
@@ -98,9 +98,9 @@ pub fn app_logo(name: &str, domain: &str, icon_url: &str, tile: Color, border: C
 /// letter while its own icon loads (or offline, or in headless renders).
 pub fn app_tile(glyph: &str, name: &str, domain: &str, icon_url: &str, tile: Color, border: Color, ink: Color) -> El {
     if let Some(px) = crate::favicon::app_logo(domain, icon_url).filter(|px| px.size().0 > 0) {
-        return el().size(34.0, 34.0).radius(9.0).clip_rounded(9.0).pixels_fit(&px, rune::SurfaceFit::Fill).inert();
+        return el().size(34.0, 34.0).radius(9.0).continuous_corners().clip_rounded(9.0).pixels_fit(&px, rune::SurfaceFit::Fill).inert();
     }
-    let base = el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center();
+    let base = el().size(34.0, 34.0).radius(9.0).continuous_corners().fill(tile).border(1.0, border).center();
     match (!glyph.is_empty()).then(|| pack::get(&format!("app-{glyph}"))).flatten() {
         Some(logo) => base.child(icon(logo, 19.0).color(brand(glyph).map_or(ink, crate::theme::hex))),
         None => {

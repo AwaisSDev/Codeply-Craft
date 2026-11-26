@@ -30,7 +30,7 @@ fn chat_row(s: &App, t: &Theme, c: &ChatMeta) -> El {
     } else {
         None
     };
-    let more = el().key(format!("chat-more/{}", c.title)).size(26.0, 26.0).radius(7.0).center().role("button")
+    let more = el().key(format!("chat-more/{}", c.title)).size(26.0, 26.0).radius(7.0).continuous_corners().center().role("button")
         .label(format!("More for {}", c.title)).help("More")
         .fill(if menu_open { t.active } else { rune::Color::TRANSPARENT }).hover(t.hover)
         .child(ico_s("more", 16.0, t.dim))
@@ -116,7 +116,7 @@ pub fn side(s: &App, t: &Theme) -> El {
                 .child(text_input(s.edit(EditKey::Search), ui(14.0, 400.0)).key("chat-search").single_line().grow(1.0).min_w(0.0)
                     .color(t.text).placeholder("Search chats", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Search chats")
                     .on_edit(|s: &mut App| s.edit_mut(EditKey::Search)))
-                .child(el().key("chat-search-close").size(22.0, 22.0).radius(6.0).center().hover(t.hover).role("button").label("Close search")
+                .child(el().key("chat-search-close").size(22.0, 22.0).radius(6.0).continuous_corners().center().hover(t.hover).role("button").label("Close search")
                     .child(ico_s("close", 13.0, t.dim))
                     .on_press(|s: &mut App| { s.chat_search = false; s.edit_mut(EditKey::Search).clear(); }))
         } else {
@@ -147,7 +147,7 @@ fn home(s: &App, t: &Theme) -> El {
     let suggestions = col().w_full().pb(20.0).children(s.data.extra.suggestions.iter().enumerate().map(|(i, (icon, label))| {
         let value = label.clone();
         enter(
-            row().key(format!("suggestion/{i}")).w_full().min_h(40.0).px(12.0).py(8.0).gap(12.0).radius(10.0).center_y()
+            row().key(format!("suggestion/{i}")).w_full().min_h(40.0).px(12.0).py(8.0).gap(12.0).radius(10.0).continuous_corners().center_y()
                 .hover(t.hover).role("button").label(label.clone())
                 .child(crate::icons::ico_app(icon, 18.0, t.dim))
                 .child(text(label.clone()).font(ui(14.0, 400.0)).color(t.dim).truncate().grow(1.0).min_w(0.0))
@@ -255,12 +255,12 @@ fn workspace(s: &App, t: &Theme, main: El) -> El {
 /// A chat's menu > Rename: its name in a field, Enter or Rename to keep it.
 pub fn rename_dialog(s: &App, t: &Theme) -> Option<El> {
     let chat = s.chat_rename.as_ref()?;
-    let field = row().w_full().h(38.0).px(12.0).radius(10.0).clip_rounded(10.0).center_y().fill(t.field).border(1.0, t.field_border)
+    let field = row().w_full().h(38.0).px(12.0).radius(10.0).continuous_corners().clip_rounded(10.0).center_y().fill(t.field).border(1.0, t.field_border)
         .child(text_input(s.edit(EditKey::ChatTitle), ui(14.0, 400.0)).key("chat-title").single_line().grow(1.0).min_w(0.0).color(t.text)
             .placeholder(chat.clone(), t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Name")
             .on_edit(|s: &mut App| s.edit_mut(EditKey::ChatTitle))
             .on_submit(|s: &mut App, _| s.submit_chat_rename()));
-    let card = col().key("chat-rename").w(420.0).padding(22.0).gap(14.0).radius(16.0)
+    let card = col().key("chat-rename").w(420.0).padding(22.0).gap(14.0).radius(16.0).continuous_corners()
         .fill(t.card).border(1.0, t.card_border).shadow(16.0, 48.0, crate::theme::rgba(0, 0, 0, 0.45))
         .transition(crate::ui::fade_in()).motion(crate::ui::ENTER).role("dialog").label("Rename chat")
         .modal(true, |s: &mut App| s.chat_rename = None)
@@ -268,7 +268,7 @@ pub fn rename_dialog(s: &App, t: &Theme) -> Option<El> {
         .child(field)
         .child(row().w_full().gap(8.0).justify_end()
             .child(crate::ui::btn(t, "Cancel", None, crate::model::ButtonKind::Plain).key("chat-rename-cancel").on_press(|s: &mut App| s.chat_rename = None))
-            .child(row().key("chat-rename-ok").h(32.0).px(14.0).radius(9.0).center_y().fill(t.accent).role("button").label("Rename")
+            .child(row().key("chat-rename-ok").h(32.0).px(14.0).radius(9.0).continuous_corners().center_y().fill(t.accent).role("button").label("Rename")
                 .child(text("Rename").font(ui(13.0, 600.0)).color(rune::Color::WHITE))
                 .on_press(|s: &mut App| s.submit_chat_rename())));
     Some(col().key("chat-rename-scrim").pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).center().fill(crate::theme::rgba(0, 0, 0, 0.4)).child(card))

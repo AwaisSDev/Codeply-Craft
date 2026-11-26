@@ -276,7 +276,7 @@ fn empty(s: &App, t: &Theme) -> El {
         col().w_full().gap(8.0).pt(10.0)
             .child(text("Clone a repository").font(ui(12.5, 600.0)).color(t.faint))
             .child(row().w_full().gap(8.0).center_y()
-                .child(row().h(32.0).px(10.0).grow(1.0).min_w(0.0).radius(9.0).center_y().fill(t.control).border(1.0, t.control_border).child(field))
+                .child(row().h(32.0).px(10.0).grow(1.0).min_w(0.0).radius(9.0).continuous_corners().center_y().fill(t.control).border(1.0, t.control_border).child(field))
                 .child(btn(t, "Clone", None, ButtonKind::Plain).key("prs-clone").on_press(|s: &mut App| s.clone_repo())))
     });
     let busy = s.data.extra.prs_busy.then(|| row().pt(4.0).child(crate::ui::wave("Working on it", ui(13.0, 500.0), t.dim)));
@@ -336,7 +336,7 @@ fn page(s: &App, t: &Theme) -> El {
         .children(author.map(|a| bot::agent(a, 20.0)))
         .child(text(author_name.clone()).font(ui(13.5, 500.0)).color(t.text))
         .child(text(p.age.clone()).font(ui(13.0, 400.0)).color(t.faint))
-        .child(row().key("pr-branch").h(24.0).px(9.0).radius(7.0).center_y().fill(t.hover)
+        .child(row().key("pr-branch").h(24.0).px(9.0).radius(7.0).continuous_corners().center_y().fill(t.hover)
             .child(text(p.branch.clone()).font(mono(12.0, 16.0)).color(t.dim).single_line()));
 
     let head = col().w_full().pt(20.0)

@@ -67,7 +67,7 @@ pub fn side(s: &App, t: &Theme) -> El {
         let more = el()
             .key(format!("more/{}", a.id))
             .size(26.0, 26.0)
-            .radius(7.0)
+            .radius(7.0).continuous_corners()
             .center()
             .role("button")
             .label(format!("More for {}", a.name))
@@ -202,7 +202,7 @@ fn health_row(s: &App, t: &Theme, i: usize, h: &crate::agentsync::Health) -> El 
     let agent = h.agent.clone();
     let name = s.data.agent(&h.agent).map_or_else(|| h.agent.clone(), |a| a.name.clone());
     let job = h.run.strip_prefix("job:").and_then(|id| s.data.extra.loops.iter().find(|l| l.id == id)).map(|l| l.name.clone());
-    row().key(format!("health/{i}")).w_full().min_h(48.0).px(10.0).py(8.0).gap(12.0).radius(10.0).center_y().hover(t.hover)
+    row().key(format!("health/{i}")).w_full().min_h(48.0).px(10.0).py(8.0).gap(12.0).radius(10.0).continuous_corners().center_y().hover(t.hover)
         .role("button").label(format!("{name} needs you"))
         .children(s.data.agent(&h.agent).map(|a| bot::agent(&awake(a), 28.0)))
         .child(col().grow(1.0).min_w(0.0).gap(2.0)
@@ -225,7 +225,7 @@ fn task_row(s: &App, t: &Theme, section: &str, i: usize, task: &Task) -> El {
         .child(text(sub).font(ui(12.5, 400.0)).color(t.dim).truncate());
     if let TaskBody::Working { progress, .. } = &task.body {
         middle = middle.child(el().mt(6.0).h(3.0).w_full().radius(1.5).fill(t.hover)
-            .child(el().h_full().w_frac(progress.clamp(0.0, 1.0)).radius(1.5).fill(t.accent)));
+            .child(el().h_full().w_frac(progress.clamp(0.0, 1.0)).radius(1.5).continuous_corners().fill(t.accent)));
     }
 
     let mut buttons = row().gap(8.0).center_y();
@@ -242,7 +242,7 @@ fn task_row(s: &App, t: &Theme, section: &str, i: usize, task: &Task) -> El {
         }
     }
 
-    row().key(base).w_full().min_h(48.0).px(10.0).py(8.0).gap(12.0).radius(10.0).center_y().hover(t.hover)
+    row().key(base).w_full().min_h(48.0).px(10.0).py(8.0).gap(12.0).radius(10.0).continuous_corners().center_y().hover(t.hover)
         .role("button").label(task.title.clone())
         .children(s.data.agent(&task.agent).map(|a| bot::agent(&awake(a), 28.0)))
         .child(middle)
@@ -290,7 +290,7 @@ fn agent_page(s: &App, t: &Theme, a: &Agent) -> El {
 
 /// A loop's small action (Run now, Delete): quiet until the row is hovered.
 fn small_btn(t: &Theme, icon: &str, label: &str) -> El {
-    el().size(24.0, 24.0).radius(6.0).center().hover(t.active).role("button").label(label.to_owned()).help(label.to_owned())
+    el().size(24.0, 24.0).radius(6.0).continuous_corners().center().hover(t.active).role("button").label(label.to_owned()).help(label.to_owned())
         .group_opacity(0.35, 1.0)
         .child(ico_s(icon, 14.0, t.dim))
 }
@@ -328,7 +328,7 @@ fn label(t: &Theme, title: &str) -> El {
 fn panel(s: &App, t: &Theme, a: &Agent) -> El {
     let computer = card(t).w_full().px(14.0).py(12.0).child(
         row().gap(12.0).center_y()
-            .child(el().size(44.0, 44.0).radius(11.0).fill(t.hover).center().child(bot::agent(a, 34.0)))
+            .child(el().size(44.0, 44.0).radius(11.0).continuous_corners().fill(t.hover).center().child(bot::agent(a, 34.0)))
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
                 .child(text(format!("{}'s computer", a.name)).font(ui(13.5, 500.0)).color(t.text).truncate())
                 .child(match s.data.extra.agents.health_of(&a.id) {
@@ -357,14 +357,14 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
             None
         };
         session_list = session_list.child(
-            row().key(format!("session/{}", c.title)).hover_group().w_full().h(36.0).px(8.0).gap(10.0).radius(8.0).center_y()
+            row().key(format!("session/{}", c.title)).hover_group().w_full().h(36.0).px(8.0).gap(10.0).radius(8.0).continuous_corners().center_y()
                 .fill(if on { t.active } else { rune::Color::TRANSPARENT }).hover(t.hover)
                 .role("button").label(c.title.clone()).help(c.title.clone())
                 .child(ico_s("chat", 16.0, t.dim))
                 .child(text(session_label(a, &c.title)).font(ui(13.5, if on { 500.0 } else { 400.0 })).color(t.text).truncate().grow(1.0).min_w(0.0))
                 .children(status)
                 .child(text(c.ago.clone()).font(ui(12.0, 400.0)).color(t.faint))
-                .child(el().key(format!("session-delete/{}", c.title)).size(22.0, 22.0).radius(6.0).center().hover(t.active).role("button").label("Delete session").help("Delete")
+                .child(el().key(format!("session-delete/{}", c.title)).size(22.0, 22.0).radius(6.0).continuous_corners().center().hover(t.active).role("button").label("Delete session").help("Delete")
                     .group_opacity(0.0, 1.0)
                     .child(ico_s("trash", 13.0, t.dim))
                     .on_press(move |s: &mut App| {
@@ -390,7 +390,7 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
     for l in mine {
         let (agent, name) = (a.id.clone(), l.name.clone());
         loops = loops.child(
-            row().w_full().hover_group().px(8.0).py(8.0).gap(4.0).radius(8.0).center_y().hover(t.hover)
+            row().w_full().hover_group().px(8.0).py(8.0).gap(4.0).radius(8.0).continuous_corners().center_y().hover(t.hover)
                 .child(col().grow(1.0).min_w(0.0).gap(4.0).mr(4.0)
                     .child(text(l.name.clone()).font(ui(13.5, 400.0)).color(t.text).truncate())
                     .child(match s.data.extra.agents.job_health(&l.id) {
@@ -410,7 +410,7 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
                     .on_press(move |s: &mut App| s.toggle_loop(&agent, &name))),
         );
     }
-    let create = row().key(format!("loop-new/{}", a.id)).w_full().min_h(34.0).px(8.0).gap(10.0).radius(8.0).center_y().hover(t.hover)
+    let create = row().key(format!("loop-new/{}", a.id)).w_full().min_h(34.0).px(8.0).gap(10.0).radius(8.0).continuous_corners().center_y().hover(t.hover)
         .role("button").label("Create a loop")
         .child(ico_s("plus", 16.0, t.faint))
         .child(text("Create a loop").font(ui(13.5, 400.0)).color(t.dim))
@@ -446,7 +446,7 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
         col().w_full().gap(2.0).children(mine.into_iter().enumerate().map(|(i, r)| {
             let chat = r.chat.clone();
             let place = if r.origin.is_empty() { String::new() } else { format!(" · {}", r.origin) };
-            row().key(format!("report/{}/{i}", a.id)).w_full().px(8.0).py(7.0).gap(10.0).radius(8.0).center_y().hover(t.hover)
+            row().key(format!("report/{}/{i}", a.id)).w_full().px(8.0).py(7.0).gap(10.0).radius(8.0).continuous_corners().center_y().hover(t.hover)
                 .role("button").label(r.text.clone())
                 .child(ico_s(if r.ok { "check" } else { "alert" }, 15.0, if r.ok { t.green } else { t.warn }))
                 .child(col().grow(1.0).min_w(0.0).gap(1.0)

@@ -138,13 +138,13 @@ fn note(t: &Theme, msg: &str) -> El {
 fn group(t: &Theme, title: &str, rows: Vec<El>) -> El {
     col().gap(8.0)
         .child(text(title.to_owned()).font(ui(13.0, 600.0)).color(t.dim).pl(4.0))
-        .child(col().w_full().fill(t.card).border(1.0, t.card_border).radius(12.0)
+        .child(col().w_full().fill(t.card).border(1.0, t.card_border).radius(12.0).continuous_corners()
             .children(rows.into_iter().enumerate().map(|(i, r)| r.border_sides([if i == 0 { 0.0 } else { 1.0 }, 0.0, 0.0, 0.0], t.card_border))))
 }
 
 /// A square icon button in a model row.
 fn tool(t: &Theme, key: String, icon: &str, label: &str, on: bool) -> El {
-    el().key(key).size(30.0, 30.0).radius(8.0).center().hover(t.hover).role("button").label(label.to_owned()).help(label.to_owned())
+    el().key(key).size(30.0, 30.0).radius(8.0).continuous_corners().center().hover(t.hover).role("button").label(label.to_owned()).help(label.to_owned())
         .child(ico_s(icon, 16.0, if on { t.accent } else { t.dim }))
 }
 
@@ -166,7 +166,7 @@ fn list(s: &App, t: &Theme) -> El {
     let models = &s.data.extra.models;
     let mut rows = vec![
         row().key("models/auto").w_full().min_h(60.0).px(16.0).py(12.0).gap(14.0).center_y().hover(t.hover).role("radio").checked(models.selected == AUTO).label("Haze 2")
-            .child(el().size(30.0, 30.0).radius(8.0).center().fill(t.accent.alpha(0.14)).child(ico_s("sparkle", 17.0, t.accent)))
+            .child(el().size(30.0, 30.0).radius(8.0).continuous_corners().center().fill(t.accent.alpha(0.14)).child(ico_s("sparkle", 17.0, t.accent)))
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
                 .child(text("Haze 2").font(ui(14.0, 500.0)).color(t.text))
                 .child(text("Yune's own model. It picks the best model for each task. Included with your account.").font(ui(12.5, 400.0)).color(t.dim).wrap()))
@@ -210,7 +210,7 @@ fn model_row(s: &App, t: &Theme, m: &ModelInfo) -> El {
             .child(tool(t, format!("model-delete/{}", m.id), "trash", "Remove", false).on_press(move |s: &mut App| s.model_delete(&d)))
     };
     row().key(format!("models/{}", m.id)).w_full().min_h(60.0).px(16.0).py(12.0).gap(14.0).center_y().hover(t.hover).role("radio").checked(selected).label(m.name.clone())
-        .child(el().size(30.0, 30.0).radius(8.0).center().fill(t.hover).child(ico_s(icon, 17.0, t.dim)))
+        .child(el().size(30.0, 30.0).radius(8.0).continuous_corners().center().fill(t.hover).child(ico_s(icon, 17.0, t.dim)))
         .child(col().grow(1.0).min_w(0.0).gap(2.0)
             .child(row().gap(8.0).center_y()
                 .child(text(m.name.clone()).font(ui(14.0, 500.0)).color(t.text).truncate())
@@ -245,7 +245,7 @@ fn linked_group(s: &App, t: &Theme) -> El {
             btn(t, "Connect", None, ButtonKind::Plain).key(format!("linked-{which}-in")).on_press(move |s: &mut App| s.linked_sign_in(which))
         };
         row().w_full().min_h(60.0).px(16.0).py(12.0).gap(14.0).center_y()
-            .child(el().size(30.0, 30.0).radius(8.0).center().fill(tile).border(1.0, t.card_border).child(ico_s(glyph, 18.0, ink)))
+            .child(el().size(30.0, 30.0).radius(8.0).continuous_corners().center().fill(tile).border(1.0, t.card_border).child(ico_s(glyph, 18.0, ink)))
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
                 .child(row().gap(8.0).center_y()
                     .child(text(name.to_owned()).font(ui(14.0, 500.0)).color(t.text))
@@ -290,7 +290,7 @@ fn field(s: &App, t: &Theme, i: usize, name: &str, placeholder: &str, secure: bo
     let input = if secure { input.secure() } else { input };
     col().w_full().gap(6.0)
         .child(text(name.to_owned()).font(ui(12.5, 500.0)).color(t.dim))
-        .child(row().w_full().h(36.0).px(12.0).radius(9.0).center_y().fill(t.hover).border(1.0, t.border).child(input))
+        .child(row().w_full().h(36.0).px(12.0).radius(9.0).continuous_corners().center_y().fill(t.hover).border(1.0, t.border).child(input))
 }
 
 fn form(s: &App, t: &Theme) -> El {
@@ -362,7 +362,7 @@ fn scan_group(s: &App, t: &Theme) -> El {
         let added = s.data.extra.models.list.iter().any(|m| m.kind == "ollama" && m.model == *name);
         let n = name.clone();
         rows.push(row().key(format!("scan/{name}")).w_full().min_h(56.0).px(16.0).py(10.0).gap(14.0).center_y()
-            .child(el().size(30.0, 30.0).radius(8.0).center().fill(t.hover).child(ico("laptop", t.dim)))
+            .child(el().size(30.0, 30.0).radius(8.0).continuous_corners().center().fill(t.hover).child(ico("laptop", t.dim)))
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
                 .child(text(name.clone()).font(ui(14.0, 500.0)).color(t.text).truncate())
                 .child(text(detail.clone()).font(ui(12.5, 400.0)).color(t.dim).truncate()))

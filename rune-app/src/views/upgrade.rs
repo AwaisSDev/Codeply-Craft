@@ -116,7 +116,7 @@ impl App {
 
 /// `.btn.blue` with its icon after the label ("Start free trial ↗").
 fn blue(t: &Theme, label: &str, icon_after: Option<&str>) -> El {
-    row().h(32.0).px(13.0).gap(7.0).radius(9.0).center_y().fill(t.accent).hover(t.press)
+    row().h(32.0).px(13.0).gap(7.0).radius(9.0).continuous_corners().center_y().fill(t.accent).hover(t.press)
         .role("button").label(label.to_owned())
         .child(text(label.to_owned()).font(ui(13.5, 600.0)).color(t.on_accent))
         .children(icon_after.map(|i| ico_s(i, 15.0, t.on_accent)))
@@ -139,8 +139,8 @@ pub fn limit_card(s: &App, t: &Theme, resets: &str, narrow: bool) -> El {
     let words = col().grow(1.0).min_w(0.0).gap(3.0)
         .child(text("You've used Yune's free limit for now").font(ui(14.5, 600.0)).color(t.text).wrap())
         .child(text(line).font(ui(13.0, 400.0)).color(t.dim).wrap());
-    let badge = el().size(36.0, 36.0).radius(10.0).center().fill(t.control).child(ico_s("clock", 18.0, t.dim));
-    let card = |e: El| e.key("limit-card").w_full().px(16.0).py(14.0).gap(14.0).radius(12.0).fill(t.card).border(1.0, t.card_border).role("group").label("Free limit");
+    let badge = el().size(36.0, 36.0).radius(10.0).continuous_corners().center().fill(t.control).child(ico_s("clock", 18.0, t.dim));
+    let card = |e: El| e.key("limit-card").w_full().px(16.0).py(14.0).gap(14.0).radius(12.0).continuous_corners().fill(t.card).border(1.0, t.card_border).role("group").label("Free limit");
     if narrow {
         return card(col()).child(row().w_full().gap(14.0).items_start().child(badge).child(words)).child(buttons.pl(50.0));
     }
@@ -186,7 +186,7 @@ pub fn sheet(s: &App, t: &Theme) -> Option<El> {
     };
     Some(col().key("upgrade-scrim").pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).center()
         .fill(theme::rgba(0, 0, 0, 0.45))
-        .child(card.fill(t.card).border(1.0, t.control_border).radius(14.0).shadow(16.0, 48.0, theme::rgba(0, 0, 0, 0.5)).role("dialog")
+        .child(card.fill(t.card).border(1.0, t.control_border).radius(14.0).continuous_corners().shadow(16.0, 48.0, theme::rgba(0, 0, 0, 0.5)).role("dialog")
             .transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
             .modal(outside, |s: &mut App| s.close_upgrade())))
 }
@@ -201,7 +201,7 @@ fn plan_card(t: &Theme, key: &'static str, on: bool, tag: Option<&str>, price: &
     let tag_ink = if t.dark { theme::hex("#8db8ff") } else { t.accent };
     let head = row().w_full().gap(8.0).center_y()
         .child(text(plan_name(key)).font(ui(15.0, 700.0)).color(t.text))
-        .children(tag.map(|g| row().h(20.0).px(8.0).radius(6.0).center_y().fill(t.accent.alpha(0.2)).child(text(g.to_owned()).font(ui(12.0, 600.0)).color(tag_ink))))
+        .children(tag.map(|g| row().h(20.0).px(8.0).radius(6.0).continuous_corners().center_y().fill(t.accent.alpha(0.2)).child(text(g.to_owned()).font(ui(12.0, 600.0)).color(tag_ink))))
         .child(el().grow(1.0))
         .child(radio);
     let price = row().gap(6.0).items_end().pt(10.0)
@@ -211,11 +211,11 @@ fn plan_card(t: &Theme, key: &'static str, on: bool, tag: Option<&str>, price: &
         row().w_full().gap(8.0).items_start()
             .child(ico_s("check", 15.0, t.accent).mt(1.0))
             .child(text(l.to_owned()).font(ui(13.5, 400.0)).color(t.text).wrap().shrink().min_w(0.0))
-            .children(soon.then(|| row().h(18.0).px(6.0).radius(5.0).center_y().fill(t.hover).child(text("Soon").font(ui(11.5, 500.0)).color(t.faint))))
+            .children(soon.then(|| row().h(18.0).px(6.0).radius(5.0).continuous_corners().center_y().fill(t.hover).child(text("Soon").font(ui(11.5, 500.0)).color(t.faint))))
     }));
     // The picked one has a 2 pt accent edge; the padding gives back the extra point.
     let (edge, pad) = if on { (2.0, 15.0) } else { (1.0, 16.0) };
-    col().key(format!("upgrade-plan/{key}")).w(280.0).padding(pad).radius(12.0)
+    col().key(format!("upgrade-plan/{key}")).w(280.0).padding(pad).radius(12.0).continuous_corners()
         .fill(if on { t.accent.alpha(0.09) } else { t.field }).border(edge, if on { t.accent } else { t.control_border })
         .role("radio").checked(on).label(plan_name(key))
         .child(head).child(price).child(list)
@@ -261,7 +261,7 @@ fn picker(s: &App, t: &Theme) -> El {
     let go = if sign_in {
         blue(t, "Sign in", None).key("upgrade-sign-in").on_press(|s: &mut App| s.sign_in_to_upgrade())
     } else if opening {
-        row().key("upgrade-go").h(32.0).px(13.0).radius(9.0).center_y().fill(t.accent.alpha(0.6)).role("button").label("Opening checkout")
+        row().key("upgrade-go").h(32.0).px(13.0).radius(9.0).continuous_corners().center_y().fill(t.accent.alpha(0.6)).role("button").label("Opening checkout")
             .child(crate::ui::wave("Opening checkout", ui(13.5, 600.0), t.on_accent))
     } else {
         blue(t, if pick == "starter" { "Start free trial" } else { "Continue to payment" }, Some("external")).key("upgrade-go")
@@ -313,7 +313,7 @@ fn waiting(t: &Theme, plan: &str, url: &str) -> El {
         .child(spinner(t, 34.0))
         .child(text("Finish on Whop").font(ui(19.0, 700.0).tracking(-0.2)).color(t.text).mt(16.0))
         .child(text(format!("We opened checkout in your browser. Yune switches to {plan} as soon as you're done.")).font(ui(14.0, 400.0).lh(20.0)).color(t.dim).wrap().align(rune::Align::Center).mt(6.0))
-        .children((!url.is_empty()).then(|| row().mt(14.0).h(28.0).px(10.0).gap(6.0).radius(8.0).center_y().fill(t.well).border(1.0, t.field_border).help(url.to_owned())
+        .children((!url.is_empty()).then(|| row().mt(14.0).h(28.0).px(10.0).gap(6.0).radius(8.0).continuous_corners().center_y().fill(t.well).border(1.0, t.field_border).help(url.to_owned())
             .child(ico_s("lock", 13.0, t.dim))
             .child(text(short_url(url)).font(mono(12.5, 16.0)).color(t.dim))))
         .child(row().mt(20.0).gap(8.0).justify_center()

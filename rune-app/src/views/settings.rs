@@ -24,7 +24,7 @@ pub fn page(s: &App, t: &Theme, _cx: &mut Cx<App>) -> El {
         .child(ico("arrow-left", t.dim))
         .child(text("Back to app").font(ui(14.0, 400.0)).color(t.text))
         .on_press(|s: &mut App| s.leave_settings());
-    let search = row().h(34.0).gap(8.0).px(10.0).radius(9.0).center_y().fill(t.field).border(1.0, t.field_border)
+    let search = row().h(34.0).gap(8.0).px(10.0).radius(9.0).continuous_corners().center_y().fill(t.field).border(1.0, t.field_border)
         .child(ico_s("search", 16.0, t.faint))
         .child(text_input(s.edit(EditKey::SettingsSearch), ui(13.5, 400.0)).key("settings-search").single_line().grow(1.0).color(t.text)
             .placeholder("Search settings", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Search settings")
@@ -74,7 +74,7 @@ fn subtitle(page: SettingsPage) -> &'static str {
 pub fn group(t: &Theme, title: &str, rows: Vec<El>) -> El {
     col().gap(8.0)
         .child(text(title.to_owned()).font(ui(13.0, 600.0)).color(t.dim).pl(4.0))
-        .child(col().w_full().fill(t.card).border(1.0, t.card_border).radius(12.0)
+        .child(col().w_full().fill(t.card).border(1.0, t.card_border).radius(12.0).continuous_corners()
             .children(rows.into_iter().enumerate().map(|(i, r)| r.border_sides([if i == 0 { 0.0 } else { 1.0 }, 0.0, 0.0, 0.0], t.card_border))))
 }
 
@@ -112,7 +112,7 @@ fn sample(t: &Theme, key: &str, _on: bool, label: &str) -> El {
 /// A key on the keyboard.
 fn keys(t: &Theme, combo: &str) -> El {
     row().gap(4.0).children(combo.split(' ').map(|k| {
-        row().h(24.0).min_w(24.0).px(7.0).radius(6.0).center().fill(t.control).border(1.0, t.control_border)
+        row().h(24.0).min_w(24.0).px(7.0).radius(6.0).continuous_corners().center().fill(t.control).border(1.0, t.control_border)
             .child(text(k.to_owned()).font(mono(12.0, 16.0)).color(t.dim))
     }))
 }
@@ -179,7 +179,7 @@ fn general(s: &App, t: &Theme) -> Vec<El> {
         group(t, "Voice", vec![
             item(t, "Groq API key", Some("The composer's mic turns speech into text with Whisper on Groq. Get a key at console.groq.com/keys."),
                 row().gap(8.0).center_y()
-                    .child(row().w(240.0).h(34.0).px(10.0).radius(9.0).center_y().fill(t.hover).border(1.0, t.border)
+                    .child(row().w(240.0).h(34.0).px(10.0).radius(9.0).continuous_corners().center_y().fill(t.hover).border(1.0, t.border)
                         .child(text_input(s.edit(EditKey::GroqKey), ui(13.5, 400.0)).key("groq-key").single_line().secure().grow(1.0).color(t.text)
                             .placeholder("gsk_...", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Groq API key")
                             .on_edit(|s: &mut App| s.edit_mut(EditKey::GroqKey))
@@ -220,7 +220,7 @@ fn profile(s: &App, t: &Theme) -> Vec<El> {
 
 /// One line field for the sign-in card.
 fn line_field(s: &App, t: &Theme, key: EditKey, placeholder: &str, submit: fn(&mut App)) -> El {
-    row().grow(1.0).min_w(0.0).h(36.0).px(12.0).radius(9.0).center_y().fill(t.hover).border(1.0, t.border)
+    row().grow(1.0).min_w(0.0).h(36.0).px(12.0).radius(9.0).continuous_corners().center_y().fill(t.hover).border(1.0, t.border)
         .child(text_input(s.edit(key), ui(14.0, 400.0)).key(format!("{}-field", key.name())).single_line().grow(1.0).color(t.text)
             .placeholder(placeholder.to_owned(), t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder.to_owned())
             .on_edit(move |s: &mut App| s.edit_mut(key))
@@ -507,7 +507,7 @@ fn plan_rows(s: &App, t: &Theme) -> Vec<El> {
         let ink = if frac >= 0.95 { t.red } else if frac >= 0.6 { t.warn } else { t.accent };
         rows.push(item(t, "Free limit", Some(&when), col().key("set-free-limit").w(220.0).gap(6.0)
             .child(el().w_full().h(6.0).radius(3.0).fill(t.switch_off).clip_rounded(3.0)
-                .child(el().h_full().w_frac(frac).radius(3.0).fill(ink)))
+                .child(el().h_full().w_frac(frac).radius(3.0).continuous_corners().fill(ink)))
             .child(row().w_full().justify_end().child(text(format!("{}% used", (frac * 100.0).round() as u32)).font(ui(12.5, 400.0)).color(t.dim)))));
     }
     rows

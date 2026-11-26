@@ -50,7 +50,7 @@ pub fn btn(t: &Theme, label: &str, icon: Option<&str>, kind: ButtonKind) -> El {
         ButtonKind::Blue => (t.accent, t.on_accent, Color::TRANSPARENT, 500.0),
         ButtonKind::Green => (t.merge, Color::WHITE, Color::TRANSPARENT, 600.0),
     };
-    row().h(32.0).px(12.0).gap(7.0).radius(9.0).center_y().fill(fill).border(1.0, border).hover(t.press)
+    row().h(32.0).px(12.0).gap(7.0).radius(9.0).continuous_corners().center_y().fill(fill).border(1.0, border).hover(t.press)
         .role("button").label(label.to_owned())
         .children(icon.map(|i| ico_s(i, 16.0, ink)))
         .child(text(label.to_owned()).font(ui(13.0, weight)).color(ink))
@@ -58,14 +58,14 @@ pub fn btn(t: &Theme, label: &str, icon: Option<&str>, kind: ButtonKind) -> El {
 
 /// `.btn.primary`: the light button ("New task").
 pub fn btn_primary(t: &Theme, label: &str, icon: &str) -> El {
-    row().h(32.0).px(12.0).gap(7.0).radius(9.0).center_y().fill(t.invert).hover(if t.dark { Color::WHITE } else { Color::BLACK }).role("button").label(label.to_owned())
+    row().h(32.0).px(12.0).gap(7.0).radius(9.0).continuous_corners().center_y().fill(t.invert).hover(if t.dark { Color::WHITE } else { Color::BLACK }).role("button").label(label.to_owned())
         .child(ico_s(icon, 16.0, t.invert_text))
         .child(text(label.to_owned()).font(ui(13.0, 600.0)).color(t.invert_text))
 }
 
 /// `.ibtn`: a 32 pt square icon button.
 pub fn ibtn(t: &Theme, icon: &str, label: &str) -> El {
-    el().size(32.0, 32.0).radius(9.0).center().hover(t.hover).role("button").label(label.to_owned()).help(label.to_owned())
+    el().size(32.0, 32.0).radius(9.0).continuous_corners().center().hover(t.hover).role("button").label(label.to_owned()).help(label.to_owned())
         .child(ico(icon, t.dim))
 }
 
@@ -83,7 +83,7 @@ pub fn pill(t: &Theme, label: &str, kind: Pill) -> El {
 
 /// `.card`.
 pub fn card(t: &Theme) -> El {
-    col().fill(t.card).border(1.0, t.card_border).radius(theme::R_MD)
+    col().fill(t.card).border(1.0, t.card_border).radius(theme::R_MD).continuous_corners()
 }
 
 /// The composer: the text field, then attach, when the engine asks before it acts (a menu:
@@ -98,7 +98,7 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
     let busy_hint = "Write the next message: it sends when this reply finishes";
     let placeholder = if running { busy_hint } else { placeholder };
     let chip = |id: String, icon: Option<&str>, label: &str, dim: Option<&str>, chevron: bool, menu: String| {
-        row().key(id).h(30.0).px(10.0).gap(7.0).radius(9.0).center_y().hover(t.hover).role("button").label(label.to_owned())
+        row().key(id).h(30.0).px(10.0).gap(7.0).radius(9.0).continuous_corners().center_y().hover(t.hover).role("button").label(label.to_owned())
             .fill(if s.menu.as_deref() == Some(menu.as_str()) { t.active } else { Color::TRANSPARENT })
             .children(icon.map(|i| ico_s(i, 19.0, t.text)))
             .children((!label.is_empty()).then(|| text(label.to_owned()).font(ui(13.5, 500.0)).color(t.text).truncate()))
@@ -125,7 +125,7 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
     } else if running && empty {
         let chat = chat.clone().unwrap_or_default();
         el().key(format!("stop-{}", key.name())).size(34.0, 34.0).radius(17.0).fill(t.invert).center().role("button").label("Stop").help("Stop")
-            .child(el().size(11.0, 11.0).radius(2.5).fill(t.invert_text))
+            .child(el().size(11.0, 11.0).radius(2.5).continuous_corners().fill(t.invert_text))
             .on_press(move |s: &mut App| s.stop(&chat))
     } else {
         el().key(format!("send-{}", key.name())).size(34.0, 34.0).radius(17.0).fill(if empty { t.control } else { t.accent }).center().role("button").label("Send")
@@ -174,14 +174,14 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
         .child(action);
     let notice = s.notice.clone().map(|n| row().px(16.0).pt(8.0).gap(6.0).center_y()
         .child(ico_s("help", 14.0, t.red)).child(text(n).font(ui(12.5, 400.0)).color(t.red).wrap().grow(1.0).min_w(0.0)));
-    col().key(format!("composer-box/{}", key.name())).w_full().fill(t.composer).border(1.0, t.composer_border).radius(theme::R_LG)
+    col().key(format!("composer-box/{}", key.name())).w_full().fill(t.composer).border(1.0, t.composer_border).radius(theme::R_LG).continuous_corners()
         .shadow(8.0, 24.0, t.shadow)
         .children(project.then(|| {
             // The project folder: a menu of the folders opened before, and "Open folder...".
             let menu_id = format!("project:{}", key.name());
             let open = s.menu.as_deref() == Some(menu_id.as_str());
             row().px(8.0).py(5.0).border_sides([0.0, 0.0, 1.0, 0.0], t.menu_line)
-                .child(row().key(format!("project-chip/{}", key.name())).gap(8.0).px(6.0).h(30.0).radius(8.0).center_y().shrink().min_w(0.0)
+                .child(row().key(format!("project-chip/{}", key.name())).gap(8.0).px(6.0).h(30.0).radius(8.0).continuous_corners().center_y().shrink().min_w(0.0)
                     .hover(t.hover).fill(if open { t.active } else { Color::TRANSPARENT })
                     .role("button").label(format!("Project folder: {}", s.data.project)).help(if s.data.extra.project_path.is_empty() { s.data.project.clone() } else { s.data.extra.project_path.clone() })
                     .child(ico("oai-folder", t.text)).child(text(s.data.project.clone()).font(ui(13.0, 600.0)).color(t.text).truncate())
@@ -215,7 +215,7 @@ fn mic(s: &App, t: &Theme, key: EditKey) -> El {
 /// One row of a dropdown menu: an icon, a label, an optional note under it, and a check when
 /// it's the current choice.
 pub fn menu_item(t: &Theme, key: String, icon: Option<&str>, label: &str, note: Option<&str>, on: bool) -> El {
-    row().key(key).w_full().min_h(34.0).px(10.0).py(6.0).gap(10.0).radius(8.0).center_y().hover(t.hover).role("menuitem").label(label.to_owned())
+    row().key(key).w_full().min_h(34.0).px(10.0).py(6.0).gap(10.0).radius(8.0).continuous_corners().center_y().hover(t.hover).role("menuitem").label(label.to_owned())
         .children(icon.map(|i| ico_s(i, 16.0, t.dim)))
         .child(col().grow(1.0).min_w(0.0)
             .child(text(label.to_owned()).font(ui(13.5, 500.0)).color(t.text))
@@ -225,7 +225,7 @@ pub fn menu_item(t: &Theme, key: String, icon: Option<&str>, label: &str, note: 
 
 /// A dropdown menu anchored to the element keyed `anchor`, closed by Escape or a click outside.
 pub fn menu(t: &Theme, anchor: &str, side: rune::Side, width: f32, items: Vec<El>) -> El {
-    col().key(format!("menu/{anchor}")).w(width).padding(6.0).gap(2.0).radius(12.0)
+    col().key(format!("menu/{anchor}")).w(width).padding(6.0).gap(2.0).radius(12.0).continuous_corners()
         .fill(t.popup).border(1.0, t.control_border).shadow(12.0, 32.0, t.shadow)
         .anchored(anchor.to_owned(), side, rune::Align::Start, 6.0)
         .role("menu")
@@ -241,10 +241,10 @@ pub fn toggle(t: &Theme, key: String, on: bool, label: &str) -> El {
 
 /// A row of tabs as a segmented control ("Summary | Changes", Integrations' tabs).
 pub fn tabs<T: Copy + PartialEq + 'static>(t: &Theme, key: &str, items: &[(T, &str)], current: T, pick: fn(&mut App, T)) -> El {
-    row().key(key.to_owned()).gap(2.0).padding(3.0).radius(10.0).fill(t.tabs).border(1.0, t.border).role("tablist")
+    row().key(key.to_owned()).gap(2.0).padding(3.0).radius(10.0).continuous_corners().fill(t.tabs).border(1.0, t.border).role("tablist")
         .children(items.iter().map(|&(v, label)| {
             let on = v == current;
-            row().key(format!("{key}/{label}")).h(28.0).px(12.0).radius(7.0).center_y().role("tab").checked(on).label(label.to_owned())
+            row().key(format!("{key}/{label}")).h(28.0).px(12.0).radius(7.0).continuous_corners().center_y().role("tab").checked(on).label(label.to_owned())
                 .fill(if on { t.active } else { Color::TRANSPARENT }).hover(t.hover)
                 .child(text(label.to_owned()).font(ui(13.0, if on { 600.0 } else { 500.0 })).color(if on { t.text } else { t.dim }))
                 .on_press(move |s: &mut App| pick(s, v))
@@ -268,7 +268,7 @@ pub fn sec(t: &Theme, icon: Option<&str>, title: &str, add: bool) -> El {
 
 /// `.row`: a sidebar row. `on` is the selected one.
 pub fn side_row(t: &Theme, on: bool) -> El {
-    row().min_h(36.0).px(10.0).py(6.0).gap(10.0).radius(10.0).center_y().hover(t.hover).fill(if on { t.active } else { Color::TRANSPARENT })
+    row().min_h(36.0).px(10.0).py(6.0).gap(10.0).radius(10.0).continuous_corners().center_y().hover(t.hover).fill(if on { t.active } else { Color::TRANSPARENT })
 }
 
 /// `.nm` with an optional `small` line under it.
@@ -374,10 +374,10 @@ pub fn file_tile(s: &App, t: &Theme, f: &str, size: f32) -> El {
         let (w, h) = px.size();
         // The picture's own shape, within reason, at the given height.
         let width = if w > 0 && h > 0 { (size * w as f32 / h as f32).clamp(size * 0.6, size * 1.8) } else { size };
-        return el().w(width).h(size).radius(12.0).clip_rounded(12.0).fill(t.well).border(1.0, t.border).help(f.to_owned())
+        return el().w(width).h(size).radius(12.0).continuous_corners().clip_rounded(12.0).fill(t.well).border(1.0, t.border).help(f.to_owned())
             .pixels_fit(&px, rune::SurfaceFit::Fill);
     }
-    row().h(32.0).px(10.0).gap(7.0).radius(9.0).center_y().fill(t.hover).help(f.to_owned())
+    row().h(32.0).px(10.0).gap(7.0).radius(9.0).continuous_corners().center_y().fill(t.hover).help(f.to_owned())
         .child(ico_s("file", 14.0, t.dim))
         .child(text(name).font(ui(12.5, 500.0)).color(t.text).single_line())
 }
@@ -399,7 +399,7 @@ fn attached(s: &App, t: &Theme, key: EditKey) -> Option<El> {
             el().key(format!("attached/{f}")).child(file_tile(s, t, f, 64.0)).child(remove.pin(None, Some(-6.0), Some(-6.0), None))
         } else {
             let name = f.rsplit(['/', '\\']).next().unwrap_or(f).to_owned();
-            row().key(format!("attached/{f}")).h(28.0).pl(8.0).pr(4.0).gap(6.0).radius(8.0).center_y().fill(t.hover).help(f.clone())
+            row().key(format!("attached/{f}")).h(28.0).pl(8.0).pr(4.0).gap(6.0).radius(8.0).continuous_corners().center_y().fill(t.hover).help(f.clone())
                 .child(ico_s("file", 13.0, t.dim))
                 .child(text(name).font(ui(12.5, 500.0)).color(t.text).single_line())
                 .child(remove)

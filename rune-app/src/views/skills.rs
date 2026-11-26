@@ -57,7 +57,7 @@ pub fn groups(s: &App, t: &Theme) -> Vec<El> {
         ("user", format!("Yours {}", count("user"))),
     ];
     let items: Vec<(&'static str, &str)> = labels.iter().map(|(k, l)| (*k, l.as_str())).collect();
-    let search = row().h(36.0).grow(1.0).min_w(0.0).gap(8.0).px(10.0).radius(9.0).center_y().fill(t.field).border(1.0, t.field_border)
+    let search = row().h(36.0).grow(1.0).min_w(0.0).gap(8.0).px(10.0).radius(9.0).continuous_corners().center_y().fill(t.field).border(1.0, t.field_border)
         .child(ico_s("search", 16.0, t.faint))
         .child(text_input(s.edit(EditKey::SkillSearch), ui(13.5, 400.0)).key("skill-search").single_line().grow(1.0).min_w(0.0).color(t.text)
             .placeholder("Search skills", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Search skills")

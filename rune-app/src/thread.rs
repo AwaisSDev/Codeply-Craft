@@ -52,7 +52,7 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
                 .children(files.iter().map(|f| crate::ui::file_tile(s, t, f, 132.0))),
             ThreadItem::Stamp(x) => row().center().mt(8.0).mb(12.0).child(text(x.clone()).font(ui(12.0, 400.0)).color(t.faint)),
             ThreadItem::You(x) => row().w_full().justify_end().my(10.0)
-                .child(el().max_w(560.0).shrink().px(16.0).py(10.0).radius(20.0).fill(t.bubble)
+                .child(el().max_w(560.0).shrink().px(16.0).py(10.0).radius(20.0).continuous_corners().fill(t.bubble)
                     .child(text(shown_message(x)).font(ui(15.0, 400.0).lh((15.0 * theme::text_scale() * theme::READ_LH).round())).color(t.text).wrap().shrink().min_w(0.0).selectable(true))),
             ThreadItem::Them(x) => {
                 let live = streaming_at == Some(i) && s.prefs.reveal;
@@ -159,7 +159,7 @@ fn command_step(s: &App, t: &Theme, key: &str, icon: &'static str, x: &str, d: &
         .on_press(move |s: &mut App| s.toggle_expanded(&toggle_key));
     let mut c = col().w_full().min_w(0.0).child(head);
     if open {
-        c = c.child(col().w_full().min_w(0.0).mt(4.0).mb(6.0).padding(12.0).gap(8.0).radius(10.0).fill(t.well).border(1.0, t.border)
+        c = c.child(col().w_full().min_w(0.0).mt(4.0).mb(6.0).padding(12.0).gap(8.0).radius(10.0).continuous_corners().fill(t.well).border(1.0, t.border)
             .child(text(format!("$ {}", d.command)).font(theme::mono(12.5, 18.0)).color(t.text).wrap().min_w(0.0).selectable(true))
             .children((!d.output.trim().is_empty()).then(|| {
                 text(d.output.clone()).font(theme::mono(12.0, 17.0)).color(t.dim).wrap().min_w(0.0).selectable(true)
@@ -204,10 +204,10 @@ pub fn approval(t: &Theme, id: &str, title: &str, detail: &str, answer: Option<&
         let id = id.to_owned();
         btn(t, label, None, kind).key(format!("approve/{id}/{verdict}")).on_press(move |s: &mut App| s.answer(&id, verdict))
     };
-    let mut c = col().w_full().my(10.0).padding(14.0).gap(10.0).radius(theme::R_MD).fill(t.card).border(1.0, if answer.is_none() { t.warn.alpha(0.5) } else { t.card_border })
+    let mut c = col().w_full().my(10.0).padding(14.0).gap(10.0).radius(theme::R_MD).continuous_corners().fill(t.card).border(1.0, if answer.is_none() { t.warn.alpha(0.5) } else { t.card_border })
         .child(row().gap(8.0).center_y().child(ico_s("shield-check", 16.0, t.warn)).child(text(title.to_owned()).font(ui(14.0, 600.0)).color(t.text).wrap().grow(1.0).min_w(0.0)))
         .children((!detail.is_empty()).then(|| {
-            el().w_full().padding(10.0).radius(8.0).fill(t.well).child(text(detail.to_owned()).font(theme::mono(12.5, 18.0)).color(t.dim).wrap())
+            el().w_full().padding(10.0).radius(8.0).continuous_corners().fill(t.well).child(text(detail.to_owned()).font(theme::mono(12.5, 18.0)).color(t.dim).wrap())
         }));
     c = match answer {
         None => c.child(row().gap(8.0)
@@ -225,7 +225,7 @@ pub fn with_composer(s: &App, t: &Theme, chat: &str, who: &str, key: EditKey, ta
     // needs you says so in one quiet line above the composer (agentsync.rs, run_health).
     let health = s.data.extra.agents.chat_health(chat).map(|h| {
         let ink = if matches!(h.state.as_str(), "needs_you" | "failed") { t.warn } else { t.dim };
-        row().key(format!("chat-health/{chat}")).w_full().px(12.0).py(7.0).gap(8.0).radius(10.0).center_y().fill(t.hover)
+        row().key(format!("chat-health/{chat}")).w_full().px(12.0).py(7.0).gap(8.0).radius(10.0).continuous_corners().center_y().fill(t.hover)
             .child(crate::icons::ico_s(h.icon(), 14.0, ink))
             .child(text(h.line()).font(crate::theme::ui(12.5, 400.0)).color(ink).truncate().grow(1.0).min_w(0.0))
     });
@@ -249,7 +249,7 @@ fn sources(t: &Theme, list: &[(String, String)]) -> El {
         row().key(format!("source/{i}/{url}")).h(26.0).px(9.0).gap(6.0).radius(13.0).center_y().fill(t.hover).border(1.0, t.border).hover(t.active)
             .role("link").label(if title.is_empty() { host.clone() } else { title.clone() }).help(if title.is_empty() { url.clone() } else { format!("{title}\n{url}") })
             .child(match icon {
-                Some(px) => el().size(14.0, 14.0).radius(3.0).clip_rounded(3.0).pixels_fit(&px, rune::SurfaceFit::Fill).inert(),
+                Some(px) => el().size(14.0, 14.0).radius(3.0).continuous_corners().clip_rounded(3.0).pixels_fit(&px, rune::SurfaceFit::Fill).inert(),
                 None => ico_s("globe", 13.0, t.faint),
             })
             .child(text(host).font(ui(12.0, 500.0)).color(t.dim))

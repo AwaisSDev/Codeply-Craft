@@ -89,7 +89,7 @@ fn label(t: &Theme, msg: &str) -> El {
 }
 
 fn line_field(s: &App, t: &Theme, k: LookEdit, w: f32, placeholder: &str, on_enter: impl Fn(&mut App) + 'static) -> El {
-    row().w(w).h(30.0).px(10.0).radius(8.0).center_y().fill(t.field).border(1.0, t.field_border)
+    row().w(w).h(30.0).px(10.0).radius(8.0).continuous_corners().center_y().fill(t.field).border(1.0, t.field_border)
         .child(text_input(s.look.edit(k), ui(13.0, 400.0)).key(k.name()).single_line().grow(1.0).min_w(0.0).color(t.text)
             .placeholder(placeholder.to_owned(), t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder.to_owned())
             .on_edit(move |s: &mut App| s.look.edit_mut(k))
@@ -130,16 +130,16 @@ fn preview(s: &App, t: &Theme, c: &Candidate) -> El {
     if let Some(px) = art {
         main = main.child(el().absolute(0.0, 0.0).w_full().h_full().opacity(0.5).pixels_fit(&px, SurfaceFit::Fill));
     }
-    let window = row().key("theme-preview").w(300.0).h(150.0).radius(10.0).clip_rounded(10.0).border(1.0, ct.border).fill(ct.solid)
+    let window = row().key("theme-preview").w(300.0).h(150.0).radius(10.0).continuous_corners().clip_rounded(10.0).border(1.0, ct.border).fill(ct.solid)
         .child(col().w(84.0).h_full().padding(10.0).gap(8.0).fill(ct.side).border_sides([0.0, 1.0, 0.0, 0.0], ct.border)
             .child(bar(40.0, ct.text)).child(bar(54.0, ct.dim)).child(bar(46.0, ct.dim)).child(bar(34.0, ct.faint)))
         .child(main.padding(12.0).gap(8.0)
-            .child(row().w_full().padding(8.0).radius(8.0).fill(ct.bubble).child(text("What should we build?".to_owned()).font(ui(11.5, 500.0)).color(ct.text)))
+            .child(row().w_full().padding(8.0).radius(8.0).continuous_corners().fill(ct.bubble).child(text("What should we build?".to_owned()).font(ui(11.5, 500.0)).color(ct.text)))
             .child(text("Secondary words read like this.".to_owned()).font(ui(11.0, 400.0)).color(ct.dim))
             .child(el().grow(1.0))
             .child(row().gap(6.0).center_y()
-                .child(row().h(24.0).px(10.0).radius(7.0).center_y().fill(ct.accent).child(text("Run".to_owned()).font(ui(11.0, 600.0)).color(ct.on_accent)))
-                .child(row().h(24.0).px(10.0).radius(7.0).center_y().fill(ct.control).border(1.0, ct.control_border).child(text("Cancel".to_owned()).font(ui(11.0, 500.0)).color(ct.text)))));
+                .child(row().h(24.0).px(10.0).radius(7.0).continuous_corners().center_y().fill(ct.accent).child(text("Run".to_owned()).font(ui(11.0, 600.0)).color(ct.on_accent)))
+                .child(row().h(24.0).px(10.0).radius(7.0).continuous_corners().center_y().fill(ct.control).border(1.0, ct.control_border).child(text("Cancel".to_owned()).font(ui(11.0, 500.0)).color(ct.text)))));
     let dot = |c: Color| el().size(14.0, 14.0).radius(7.0).fill(c).border(1.0, t.text.alpha(0.2));
     let mut facts = vec![format!("{} mode", if ct.dark { "Dark" } else { "Light" })];
     if c.font {
@@ -185,7 +185,7 @@ fn colours(s: &App, t: &Theme) -> El {
                 .border(if on { 2.0 } else { 1.0 }, if on { t.text } else { t.text.alpha(0.22) })
                 .on_press(move |s: &mut App| s.set_theme_colour(slot, Some(c)))
         }));
-        let auto = row().key(format!("sw/{}/auto", slot.key())).h(24.0).px(8.0).radius(7.0).center_y().role("button").label(format!("{} automatic", slot.label()))
+        let auto = row().key(format!("sw/{}/auto", slot.key())).h(24.0).px(8.0).radius(7.0).continuous_corners().center_y().role("button").label(format!("{} automatic", slot.label()))
             .fill(if current.is_none() { t.active } else { Color::TRANSPARENT }).hover(t.hover)
             .child(text("Auto".to_owned()).font(ui(12.0, 500.0)).color(if current.is_none() { t.text } else { t.dim }))
             .on_press(move |s: &mut App| s.set_theme_colour(slot, None));
@@ -204,7 +204,7 @@ fn colours(s: &App, t: &Theme) -> El {
 
 fn picker(t: &Theme, key: &str, value: &str, menu: &str) -> El {
     let menu = menu.to_owned();
-    row().key(key.to_owned()).h(32.0).px(12.0).gap(8.0).radius(9.0).center_y().fill(t.control).border(1.0, t.control_border).hover(t.press).role("button").label(value.to_owned())
+    row().key(key.to_owned()).h(32.0).px(12.0).gap(8.0).radius(9.0).continuous_corners().center_y().fill(t.control).border(1.0, t.control_border).hover(t.press).role("button").label(value.to_owned())
         .child(text(value.to_owned()).font(ui(13.0, 500.0)).color(t.text).truncate().max_w(220.0))
         .child(ico_s("chevron-down", 16.0, t.dim))
         .on_press(move |s: &mut App| s.toggle_menu(&menu))
@@ -264,7 +264,7 @@ fn background(s: &App, t: &Theme) -> El {
     if !s.look.hits.is_empty() {
         let tile = |i: usize, h: &crate::look::Hit| {
             let px = s.look.picture(&h.thumb, 0.0, 320);
-            el().key(format!("hit/{i}")).w(150.0).h(94.0).radius(8.0).clip_rounded(8.0).border(1.0, t.border).fill(t.well).role("button").label(h.title.clone()).help(h.title.clone())
+            el().key(format!("hit/{i}")).w(150.0).h(94.0).radius(8.0).continuous_corners().clip_rounded(8.0).border(1.0, t.border).fill(t.well).role("button").label(h.title.clone()).help(h.title.clone())
                 .pixels_fit(&px, SurfaceFit::Fill).hover(t.hover)
                 .on_press(move |s: &mut App| s.use_hit(i))
         };
@@ -316,7 +316,7 @@ pub fn menu(s: &App, t: &Theme, id: &str) -> Option<El> {
     };
     let mut items = vec![entry("Default", "")];
     items.extend(names.iter().map(|n| entry(n, n)));
-    Some(col().key(format!("menu/{anchor}")).w(260.0).padding(6.0).radius(12.0)
+    Some(col().key(format!("menu/{anchor}")).w(260.0).padding(6.0).radius(12.0).continuous_corners()
         .fill(t.popup).border(1.0, t.control_border).shadow(12.0, 32.0, t.shadow)
         .anchored(anchor.to_owned(), Side::Bottom, rune::Align::Start, 6.0)
         .role("menu")

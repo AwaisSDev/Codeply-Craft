@@ -24,11 +24,11 @@ fn tab_el(s: &App, t: &Theme, i: usize) -> El {
     let tab = &s.browser.tabs[i];
     let on = i == s.browser.active;
     let title = if tab.loading { format!("{} ...", tab.title) } else { tab.title.clone() };
-    let close = el().key(format!("tab-close/{}", tab.id)).size(20.0, 20.0).radius(6.0).center().hover(t.hover).role("button").label("Close tab")
+    let close = el().key(format!("tab-close/{}", tab.id)).size(20.0, 20.0).radius(6.0).continuous_corners().center().hover(t.hover).role("button").label("Close tab")
         .group_opacity(if on { 1.0 } else { 0.0 }, 1.0)
         .child(ico_s("close", 14.0, t.dim))
         .on_press(move |s: &mut App| s.browser.close_tab(i));
-    row().key(format!("tab/{}", tab.id)).h(30.0).max_w(if tab.agent.is_some() { 240.0 } else { 180.0 }).px(10.0).gap(8.0).radius(8.0).center_y().hover_group().hover(t.hover)
+    row().key(format!("tab/{}", tab.id)).h(30.0).max_w(if tab.agent.is_some() { 240.0 } else { 180.0 }).px(10.0).gap(8.0).radius(8.0).continuous_corners().center_y().hover_group().hover(t.hover)
         .fill(if on { t.active } else { Color::TRANSPARENT })
         .role("tab").checked(on).label(tab.title.clone())
         .child(match &tab.agent {
@@ -86,10 +86,10 @@ pub fn pane(s: &App, t: &Theme) -> El {
         .child(ibtn(t, "phone", "Phone view").key("browser-mobile")
             .fill(if s.panes.mobile { t.active } else { Color::TRANSPARENT })
             .on_press(|s: &mut App| s.panes.mobile = !s.panes.mobile))
-        .child(row().grow(1.0).min_w(0.0).h(30.0).mx(6.0).gap(8.0).px(12.0).radius(9.0).clip_rounded(9.0).center_y().fill(t.hover).border(1.0, t.border)
+        .child(row().grow(1.0).min_w(0.0).h(30.0).mx(6.0).gap(8.0).px(12.0).radius(9.0).continuous_corners().clip_rounded(9.0).center_y().fill(t.hover).border(1.0, t.border)
             .child(ico_s(if url.starts_with("https://") { "lock" } else { "globe" }, 14.0, t.faint))
             .child(address))
-        .child(el().key("browser-star").size(32.0, 32.0).radius(9.0).center().hover(t.hover).role("button").label(if bookmarked { "Remove bookmark" } else { "Bookmark" })
+        .child(el().key("browser-star").size(32.0, 32.0).radius(9.0).continuous_corners().center().hover(t.hover).role("button").label(if bookmarked { "Remove bookmark" } else { "Bookmark" })
             .child(ico(if bookmarked { "check" } else { "plus" }, if bookmarked { t.accent } else { t.dim }))
             .on_press(move |s: &mut App| {
                 let (u, title) = (star_url.clone(), star_title.clone());
@@ -119,7 +119,7 @@ pub fn pane(s: &App, t: &Theme) -> El {
             .child(site_icon(t, &url, 32.0))
             .child(text(tab.map(|t| t.title).unwrap_or_default()).font(ui(18.0, 600.0)).color(t.text))
             .child(text(url.clone()).font(ui(13.0, 400.0)).color(t.faint))
-            .child(row().key("browser-open-system").h(34.0).px(14.0).gap(8.0).radius(9.0).center_y().fill(t.control).border(1.0, t.control_border).hover(t.hover)
+            .child(row().key("browser-open-system").h(34.0).px(14.0).gap(8.0).radius(9.0).continuous_corners().center_y().fill(t.control).border(1.0, t.control_border).hover(t.hover)
                 .role("button").label("Open in your browser")
                 .child(ico_s("external", 16.0, t.text)).child(text("Open in your browser").font(ui(13.0, 500.0)).color(t.text))
                 .on_press_tx(move |_: &mut App, tx| { let _ = tx.open_url(&u); }))

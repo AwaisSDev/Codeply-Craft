@@ -261,7 +261,7 @@ fn field(s: &App, t: &Theme, key: EditKey, label: &str, placeholder: &str) -> El
         .on_submit(|s: &mut App, _| s.submit_team_dialog());
     col().w_full().gap(5.0)
         .child(text(label.to_owned()).font(ui(12.0, 600.0)).color(t.faint))
-        .child(row().w_full().h(38.0).px(12.0).radius(10.0).clip_rounded(10.0).center_y().fill(t.field).border(1.0, t.field_border).child(input))
+        .child(row().w_full().h(38.0).px(12.0).radius(10.0).continuous_corners().clip_rounded(10.0).center_y().fill(t.field).border(1.0, t.field_border).child(input))
 }
 
 /// Closes the dialog and what it said ("Give it a name.") with it.
@@ -295,7 +295,7 @@ fn area(s: &App, t: &Theme, key: EditKey, label: &str, placeholder: &str) -> El 
         .on_edit(move |s: &mut App| s.edit_mut(key));
     col().w_full().gap(5.0)
         .child(text(label.to_owned()).font(ui(12.0, 600.0)).color(t.faint))
-        .child(col().w_full().h(180.0).px(12.0).py(10.0).radius(10.0).clip_rounded(10.0).fill(t.field).border(1.0, t.field_border)
+        .child(col().w_full().h(180.0).px(12.0).py(10.0).radius(10.0).continuous_corners().clip_rounded(10.0).fill(t.field).border(1.0, t.field_border)
             .scroll(rune::ScrollSpec { stick_bottom: false }).child(input))
 }
 
@@ -349,7 +349,7 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
         let ink = if n.starts_with("Yune wrote") { t.dim } else { t.red };
         text(n).font(ui(12.5, 400.0)).color(ink).wrap()
     });
-    let card = col().key("team-dialog").w(460.0).padding(22.0).gap(14.0).radius(16.0)
+    let card = col().key("team-dialog").w(460.0).padding(22.0).gap(14.0).radius(16.0).continuous_corners()
         .fill(t.card).border(1.0, t.card_border).shadow(16.0, 48.0, theme::rgba(0, 0, 0, 0.45))
         .transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
         .role("dialog").label(title.clone())

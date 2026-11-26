@@ -57,7 +57,7 @@ fn logo(t: &Theme, icon: &str) -> El {
     let (tile, border, ink) = (t.tile, t.tile_border, t.tile_ink);
     match icon.strip_prefix("app-") {
         Some(slug) => app_logo(slug, crate::icons::domain_of(slug).unwrap_or_default(), "", tile, border, ink),
-        None => el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center().child(ico_s(icon, 18.0, ink)),
+        None => el().size(34.0, 34.0).radius(9.0).continuous_corners().fill(tile).border(1.0, border).center().child(ico_s(icon, 18.0, ink)),
     }
 }
 
@@ -105,7 +105,7 @@ pub fn main(s: &App, t: &Theme) -> El {
             // Skills: Settings > Skills lists every skill the engine has, and uses one.
             IntegrationsTab::Skills => btn_primary(t, action, "book").key("int-primary").on_press(|s: &mut App| s.open_settings(crate::app::SettingsPage::Skills)),
         });
-    let search = row().h(44.0).gap(10.0).px(14.0).radius(12.0).center_y().fill(t.field).border(1.0, t.field_border)
+    let search = row().h(44.0).gap(10.0).px(14.0).radius(12.0).continuous_corners().center_y().fill(t.field).border(1.0, t.field_border)
         .child(ico("search", t.faint))
         .child(text_input(s.edit(EditKey::AppSearch), ui(14.5, 400.0)).key("app-search").single_line().grow(1.0).color(t.text)
             .placeholder(placeholder, t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder)
@@ -136,7 +136,7 @@ fn plugins(s: &App, t: &Theme, q: &str) -> El {
         } else {
             btn(t, "Install", None, ButtonKind::Blue)
         };
-        col().gap(12.0).padding(16.0).radius(12.0).fill(t.panel).border(1.0, t.border)
+        col().gap(12.0).padding(16.0).radius(12.0).continuous_corners().fill(t.panel).border(1.0, t.border)
             .child(row().gap(12.0).center_y()
                 .child(logo(t, p.icon))
                 .child(col().grow(1.0).min_w(0.0)
@@ -163,7 +163,7 @@ fn mcp(s: &App, t: &Theme, q: &str) -> El {
     let rows: Vec<El> = s.data.extra.mcp.iter().filter(|m| matches(q, &[m.name.as_str(), m.note.as_str()])).enumerate().map(|(i, m)| {
         let name = m.name.clone();
         enter(
-            row().gap(12.0).px(14.0).py(12.0).radius(12.0).center_y().fill(t.panel).border(1.0, t.border)
+            row().gap(12.0).px(14.0).py(12.0).radius(12.0).continuous_corners().center_y().fill(t.panel).border(1.0, t.border)
                 .child(ico("chip", t.dim))
                 .child(col().grow(1.0).min_w(0.0)
                     .child(text(m.name.clone()).font(ui(14.0, 600.0)).color(t.text))
@@ -190,7 +190,7 @@ fn skills(s: &App, t: &Theme, q: &str) -> El {
     let mut rows: Vec<El> = found.iter().take(SHOWN).enumerate().map(|(i, k)| {
         let name = k.name.clone();
         enter(
-            row().gap(12.0).px(14.0).py(12.0).radius(12.0).center_y().fill(t.panel).border(1.0, t.border)
+            row().gap(12.0).px(14.0).py(12.0).radius(12.0).continuous_corners().center_y().fill(t.panel).border(1.0, t.border)
                 .child(ico("book", t.dim))
                 .child(col().grow(1.0).min_w(0.0).gap(2.0)
                     .child(text(k.name.clone()).font(mono(13.0, 18.0)).color(t.text))
@@ -205,7 +205,7 @@ fn skills(s: &App, t: &Theme, q: &str) -> El {
         return empty(t, "No skills match.");
     }
     if found.len() > SHOWN {
-        rows.push(row().key("int-skills-all").px(14.0).py(10.0).radius(12.0).center_y().hover(t.hover).role("button").label("See all skills")
+        rows.push(row().key("int-skills-all").px(14.0).py(10.0).radius(12.0).continuous_corners().center_y().hover(t.hover).role("button").label("See all skills")
             .child(text(format!("{} more in Settings > Skills", found.len() - SHOWN)).font(ui(13.0, 500.0)).color(t.accent))
             .on_press(|s: &mut App| s.open_settings(crate::app::SettingsPage::Skills)));
     }

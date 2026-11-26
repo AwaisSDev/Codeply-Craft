@@ -50,7 +50,7 @@ fn field(s: &App, t: &Theme, key: EditKey, label: &str, placeholder: &str, grow:
         .placeholder(placeholder.to_owned(), t.faint).caret(t.accent, t.accent.alpha(0.3)).label(label.to_owned())
         .on_edit(move |s: &mut App| s.edit_mut(key))
         .on_submit(|s: &mut App, _| s.add_reminder());
-    row().grow(grow).min_w(0.0).h(38.0).px(12.0).radius(10.0).clip_rounded(10.0).center_y().fill(t.field).border(1.0, t.field_border).child(input)
+    row().grow(grow).min_w(0.0).h(38.0).px(12.0).radius(10.0).continuous_corners().clip_rounded(10.0).center_y().fill(t.field).border(1.0, t.field_border).child(input)
 }
 
 /// Who set it: that agent's face when it's on the team, else its first letter.
@@ -65,7 +65,7 @@ fn face(s: &App, t: &Theme, who: &str, size: f32) -> El {
 /// The notice the phone shows when notifications are off, for the PC: they're the app's own switch.
 pub fn notifications_off(s: &App, t: &Theme, what: &str) -> Option<El> {
     (!s.prefs.notifications).then(|| {
-        row().key("notifications-off").w_full().px(14.0).py(10.0).gap(10.0).radius(10.0).center_y().fill(t.warn.alpha(0.10)).border(1.0, t.warn.alpha(0.25))
+        row().key("notifications-off").w_full().px(14.0).py(10.0).gap(10.0).radius(10.0).continuous_corners().center_y().fill(t.warn.alpha(0.10)).border(1.0, t.warn.alpha(0.25))
             .child(ico_s("bell", 16.0, t.warn))
             .child(text(format!("Notifications are off for Yune, so {what} only show here while the app is open.")).font(ui(12.5, 400.0)).color(t.text).wrap().grow(1.0).min_w(0.0))
             .child(btn(t, "Turn on", None, ButtonKind::Plain).key("notifications-on").on_press(|s: &mut App| s.update_prefs(|p| p.notifications = true)))
@@ -74,7 +74,7 @@ pub fn notifications_off(s: &App, t: &Theme, what: &str) -> Option<El> {
 
 fn upcoming_row(s: &App, t: &Theme, i: usize, r: &Reminder, now: u64) -> El {
     let (snooze, gone) = (r.id.clone(), r.id.clone());
-    let row_ = row().key(format!("reminder/{}", r.id)).hover_group().w_full().min_h(52.0).px(10.0).py(8.0).gap(12.0).radius(10.0).center_y().hover(t.hover)
+    let row_ = row().key(format!("reminder/{}", r.id)).hover_group().w_full().min_h(52.0).px(10.0).py(8.0).gap(12.0).radius(10.0).continuous_corners().center_y().hover(t.hover)
         .child(face(s, t, &r.bot, 30.0))
         .child(col().grow(1.0).min_w(0.0).gap(2.0)
             .child(text(r.text.clone()).font(ui(14.0, 500.0)).color(t.text).truncate())
@@ -90,7 +90,7 @@ fn earlier_row(s: &App, t: &Theme, r: &Reminder) -> El {
     let gone = r.id.clone();
     let at = agentsync::parse_iso(if r.sent_at.is_empty() { &r.due_at } else { &r.sent_at }).map(|ms| agentsync::when_label(ms, now_ms())).unwrap_or_default();
     let who = if r.bot.is_empty() { "Yune" } else { r.bot.as_str() };
-    row().key(format!("reminder-earlier/{}", r.id)).w_full().min_h(44.0).px(10.0).py(6.0).gap(12.0).radius(10.0).center_y().hover(t.hover)
+    row().key(format!("reminder-earlier/{}", r.id)).w_full().min_h(44.0).px(10.0).py(6.0).gap(12.0).radius(10.0).continuous_corners().center_y().hover(t.hover)
         .child(face(s, t, who, 24.0))
         .child(col().grow(1.0).min_w(0.0).gap(1.0)
             .child(text(r.text.clone()).font(ui(13.5, 400.0)).color(t.dim).truncate())
@@ -120,7 +120,7 @@ pub fn page(s: &App, t: &Theme) -> El {
         body = body.child(text(n).font(ui(12.5, 400.0)).color(t.red).wrap().pt(8.0).px(2.0));
     }
     if !x.reminders_note.is_empty() {
-        body = body.child(row().w_full().mt(10.0).px(12.0).py(9.0).radius(10.0).gap(8.0).center_y().fill(t.hover)
+        body = body.child(row().w_full().mt(10.0).px(12.0).py(9.0).radius(10.0).continuous_corners().gap(8.0).center_y().fill(t.hover)
             .child(ico_s("alert", 15.0, t.dim))
             .child(text(x.reminders_note.clone()).font(ui(12.5, 400.0)).color(t.dim).wrap().grow(1.0).min_w(0.0)));
     }

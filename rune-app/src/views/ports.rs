@@ -12,7 +12,7 @@ use crate::ui::{btn, wave};
 
 /// A small icon button for a port's row.
 fn act(t: &Theme, key: String, icon: &str, label: &str) -> El {
-    el().key(key).size(28.0, 28.0).radius(7.0).center().hover(t.hover).role("button").label(label.to_owned()).help(label.to_owned())
+    el().key(key).size(28.0, 28.0).radius(7.0).continuous_corners().center().hover(t.hover).role("button").label(label.to_owned()).help(label.to_owned())
         .child(ico_s(icon, 15.0, t.dim))
 }
 
@@ -65,7 +65,7 @@ pub fn panel(s: &App, t: &Theme) -> El {
     });
 
     let add = row().w_full().px(12.0).py(8.0).gap(8.0).center_y().border_sides([1.0, 0.0, 0.0, 0.0], t.border)
-        .child(row().grow(1.0).min_w(0.0).max_w(260.0).h(30.0).px(10.0).radius(8.0).clip_rounded(8.0).center_y().fill(t.field).border(1.0, t.field_border)
+        .child(row().grow(1.0).min_w(0.0).max_w(260.0).h(30.0).px(10.0).radius(8.0).continuous_corners().clip_rounded(8.0).center_y().fill(t.field).border(1.0, t.field_border)
             .child(text_input(s.edit(EditKey::PortAdd), mono(12.5, 18.0)).key("port-add").single_line().grow(1.0).min_w(0.0).color(t.text)
                 .placeholder("Add a port, like 3000", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Add a port")
                 .on_edit(|s: &mut App| s.edit_mut(EditKey::PortAdd))

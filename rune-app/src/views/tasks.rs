@@ -36,7 +36,7 @@ pub fn pane(s: &App, t: &Theme) -> El {
         let agent = task.agent.as_deref().and_then(|n| s.data.agent(n).or_else(|| s.data.team.iter().find(|a| a.name.eq_ignore_ascii_case(n))));
         let icon = match agent {
             Some(a) if task.kind == "agent" => bot::agent(&awake(a), 26.0),
-            _ => el().size(26.0, 26.0).radius(7.0).fill(t.hover).center().child(ico_s("terminal", 14.0, t.dim)),
+            _ => el().size(26.0, 26.0).radius(7.0).continuous_corners().fill(t.hover).center().child(ico_s("terminal", 14.0, t.dim)),
         };
         let status = if task.running {
             text("Working").font(ui(12.0, 500.0)).color(t.accent)
@@ -48,13 +48,13 @@ pub fn pane(s: &App, t: &Theme) -> El {
             .children((!task.detail.is_empty()).then(|| text(task.detail.clone()).font(ui(12.0, 400.0)).color(t.dim).single_line().truncate()))
             .child(status);
         let id = task.id.clone();
-        let stop = task.running.then(|| el().key(format!("task-stop/{}", task.id)).size(26.0, 26.0).radius(7.0).center().hover(t.active)
+        let stop = task.running.then(|| el().key(format!("task-stop/{}", task.id)).size(26.0, 26.0).radius(7.0).continuous_corners().center().hover(t.active)
             .role("button").label("Stop").help("Stop")
-            .child(el().size(9.0, 9.0).radius(2.0).fill(t.dim))
+            .child(el().size(9.0, 9.0).radius(2.0).continuous_corners().fill(t.dim))
             .on_press(move |s: &mut App| s.kill_task(&id)));
         // An agent's task opens its session on the agent's page.
         let open = agent.map(|a| (a.id.clone(), task.title.clone()));
-        list = list.child(row().key(format!("task/{}", task.id)).w_full().px(8.0).py(8.0).gap(10.0).radius(10.0).items_start().hover(t.hover)
+        list = list.child(row().key(format!("task/{}", task.id)).w_full().px(8.0).py(8.0).gap(10.0).radius(10.0).continuous_corners().items_start().hover(t.hover)
             .role("button").label(task.title.clone()).help(task.title.clone())
             .child(icon)
             .child(info)
@@ -92,7 +92,7 @@ fn section_label(t: &Theme, label: &str, count: Option<usize>) -> El {
 /// "Subagents": a fold-down list of the chat's agents, and each team's channel.
 fn subagents(s: &App, t: &Theme, mine: &[&Subagent]) -> El {
     let working = mine.iter().filter(|a| a.working()).count();
-    let head = row().key("subagents-fold").w_full().h(30.0).px(8.0).gap(6.0).radius(8.0).center_y().hover(t.hover)
+    let head = row().key("subagents-fold").w_full().h(30.0).px(8.0).gap(6.0).radius(8.0).continuous_corners().center_y().hover(t.hover)
         .role("button").label(if s.sub_folded { "Show subagents" } else { "Hide subagents" })
         .child(ico_s(if s.sub_folded { "chevron-right" } else { "chevron-down" }, 14.0, t.dim))
         .child(text("Subagents").font(ui(12.5, 600.0)).color(t.text))
@@ -147,7 +147,7 @@ fn agent_row(s: &App, t: &Theme, a: &Subagent) -> El {
         let gone = a.id.clone();
         ibtn(t, "close", &format!("Remove {}", a.name)).key(format!("subagent-remove/{}", a.id)).on_press(move |s: &mut App| s.agents_op(crate::subagents::Op::Remove(gone.clone())))
     };
-    row().key(format!("subagent/{}", a.id)).w_full().min_h(58.0).px(8.0).py(8.0).gap(12.0).radius(12.0).center_y()
+    row().key(format!("subagent/{}", a.id)).w_full().min_h(58.0).px(8.0).py(8.0).gap(12.0).radius(12.0).continuous_corners().center_y()
         .fill(if open { t.active } else { rune::Color::TRANSPARENT }).hover(t.hover)
         .role("button").label(format!("{}: {}", a.name, a.now()))
         .child(bot::mascot(&a.color, &a.look, a.state(), BIG))
@@ -164,7 +164,7 @@ fn log_line(t: &Theme, a: &Subagent, i: usize, l: &Line) -> El {
         "user" => {
             let who = if l.by == "you" { "You" } else { "Yune" };
             let tag = if l.live { " · while working" } else { "" };
-            col().key(key).w_full().px(10.0).py(6.0).gap(2.0).radius(8.0).fill(t.hover)
+            col().key(key).w_full().px(10.0).py(6.0).gap(2.0).radius(8.0).continuous_corners().fill(t.hover)
                 .child(text(format!("{who}{tag}")).font(ui(11.0, 600.0)).color(t.faint))
                 .child(say(l.text.clone(), t.text))
         }
@@ -189,7 +189,7 @@ fn log_line(t: &Theme, a: &Subagent, i: usize, l: &Line) -> El {
         "done" => {
             let head = if l.ok { "Done" } else if l.text == "stopped" { "Stopped" } else { "Did not finish" };
             let files = if l.files.is_empty() { String::new() } else { format!(" · {} file{}", l.files.len(), if l.files.len() == 1 { "" } else { "s" }) };
-            col().key(key).w_full().px(10.0).py(6.0).gap(2.0).radius(8.0).border(1.0, if l.ok { t.green.alpha(0.5) } else { t.border })
+            col().key(key).w_full().px(10.0).py(6.0).gap(2.0).radius(8.0).continuous_corners().border(1.0, if l.ok { t.green.alpha(0.5) } else { t.border })
                 .child(text(format!("{head}{files}")).font(ui(12.0, 600.0)).color(if l.ok { t.green } else { t.dim }))
                 .children((!l.ok && !l.text.is_empty() && l.text != "stopped").then(|| say(l.text.clone(), t.dim)))
         }
@@ -210,7 +210,7 @@ fn agent_log(s: &App, t: &Theme, a: &Subagent) -> El {
     let bar = row().w_full().px(8.0).py(6.0).gap(6.0).center_y().border_sides([1.0, 0.0, 0.0, 0.0], t.border)
         .child(input)
         .child(ibtn(t, "arrow-up", "Send").key(format!("subagent-send/{}", a.id)).on_press(|s: &mut App| s.send_subagent()));
-    col().key(format!("subagent-view/{}", a.id)).w_full().mb(6.0).radius(12.0).clip_rounded(12.0).fill(t.pane).border(1.0, t.border)
+    col().key(format!("subagent-view/{}", a.id)).w_full().mb(6.0).radius(12.0).continuous_corners().clip_rounded(12.0).fill(t.pane).border(1.0, t.border)
         .child(screen)
         .child(bar)
 }
@@ -221,7 +221,7 @@ fn team_row(s: &App, t: &Theme, team: &Team) -> El {
     let id = team.id.clone();
     let faces = row().gap(-4.0).children(team.members.iter().filter_map(|m| s.data.extra.subagents.agent(m)).map(|a| bot::mascot(&a.color, &a.look, a.state(), 20.0)));
     let last = team.messages.last().map(|m| format!("{}: {}", m.from, m.text)).unwrap_or_else(|| "No messages yet".into());
-    row().key(format!("team/{}", team.id)).w_full().min_h(48.0).px(8.0).py(6.0).gap(10.0).radius(12.0).center_y()
+    row().key(format!("team/{}", team.id)).w_full().min_h(48.0).px(8.0).py(6.0).gap(10.0).radius(12.0).continuous_corners().center_y()
         .fill(if open { t.active } else { rune::Color::TRANSPARENT }).hover(t.hover).role("button").label("Team channel")
         .child(el().size(BIG, BIG).radius(BIG / 2.0).center().fill(t.hover).child(ico_s("users", 18.0, t.dim)))
         .child(col().grow(1.0).min_w(0.0).gap(2.0)
@@ -252,7 +252,7 @@ fn team_channel(s: &App, t: &Theme, team: &Team) -> El {
         .color(t.text).placeholder("Message the whole team", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Message the team")
         .on_edit(|s: &mut App| s.edit_mut(EditKey::TeamPost))
         .on_submit(|s: &mut App, _| s.post_team());
-    col().key(format!("team-view/{}", team.id)).w_full().mb(6.0).radius(12.0).clip_rounded(12.0).fill(t.pane).border(1.0, t.border)
+    col().key(format!("team-view/{}", team.id)).w_full().mb(6.0).radius(12.0).continuous_corners().clip_rounded(12.0).fill(t.pane).border(1.0, t.border)
         .child(screen)
         .child(row().w_full().px(8.0).py(6.0).gap(6.0).center_y().border_sides([1.0, 0.0, 0.0, 0.0], t.border)
             .child(input)

@@ -37,7 +37,7 @@ pub fn popup(s: &App, t: &Theme) -> Option<El> {
             _ => c.label.clone(),
         };
         let name_font = if matches!(c.pick, Pick::File(_)) { mono(13.0, 18.0) } else { ui(13.5, 500.0) };
-        row().key(format!("mention/{i}")).w_full().h(34.0).px(10.0).gap(10.0).radius(8.0).center_y()
+        row().key(format!("mention/{i}")).w_full().h(34.0).px(10.0).gap(10.0).radius(8.0).continuous_corners().center_y()
             .fill(if on { t.active } else { Color::TRANSPARENT }).hover(t.hover)
             .role("option").checked(on).label(name.clone())
             .child(el().size(18.0, 18.0).center().child(lead))
@@ -48,7 +48,7 @@ pub fn popup(s: &App, t: &Theme) -> Option<El> {
             })
     });
     let width = if key == EditKey::CodeAgent { 380.0 } else { 560.0 };
-    Some(col().key("mention-menu").w(width).padding(6.0).gap(2.0).radius(12.0)
+    Some(col().key("mention-menu").w(width).padding(6.0).gap(2.0).radius(12.0).continuous_corners()
         .fill(t.popup).border(1.0, t.control_border).shadow(12.0, 32.0, t.shadow)
         .anchored(format!("composer-box/{}", key.name()), rune::Side::Top, rune::Align::Start, 6.0)
         // A click on a row leaves the composer focused, so typing carries on.

@@ -41,7 +41,7 @@ pub fn sheet(s: &App, t: &Theme) -> Option<El> {
             let label = if *total > 0 { format!("Downloading {} of {}", mb(*done), mb(*total)) } else { format!("Downloading {}", mb(*done)) };
             col().w_full().gap(8.0)
                 .child(el().w_full().h(6.0).radius(3.0).fill(t.hover).clip_rounded(3.0)
-                    .child(el().h_full().w_frac(frac).radius(3.0).fill(t.accent)))
+                    .child(el().h_full().w_frac(frac).radius(3.0).continuous_corners().fill(t.accent)))
                 .child(text(label).font(ui(12.5, 400.0)).color(t.faint))
         }
         Phase::Installing => col().child(text("Installing. Yune will open again when it's done.").font(ui(13.0, 400.0)).color(t.dim)),
@@ -49,7 +49,7 @@ pub fn sheet(s: &App, t: &Theme) -> Option<El> {
             .child(btn(t, "Later", None, ButtonKind::Plain).key("update-later").on_press(|s: &mut App| s.later_update()))
             .child(btn(t, "Update now", Some("download"), ButtonKind::Blue).key("update-now").on_press(|s: &mut App| s.install_update())),
     };
-    let card = col().key("update-sheet").w(480.0).padding(24.0).gap(18.0).radius(16.0)
+    let card = col().key("update-sheet").w(480.0).padding(24.0).gap(18.0).radius(16.0).continuous_corners()
         .fill(t.card).border(1.0, t.card_border).shadow(16.0, 48.0, theme::rgba(0, 0, 0, 0.5))
         .role("dialog").label("Update")
         .child(head)

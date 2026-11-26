@@ -98,7 +98,7 @@ fn menus(s: &App, t: &Theme) -> Option<El> {
         let (r, a, b, c) = (chat.to_owned(), chat.to_owned(), chat.to_owned(), chat.to_owned());
         let divider = || rune::el().w_full().py(4.0).child(rune::el().w_full().h(1.0).fill(t.border));
         // Delete in red, as the destructive one.
-        let delete = rune::row().key("chat-menu/delete").w_full().min_h(34.0).px(10.0).py(6.0).gap(10.0).radius(8.0).center_y().hover(t.red.alpha(0.1))
+        let delete = rune::row().key("chat-menu/delete").w_full().min_h(34.0).px(10.0).py(6.0).gap(10.0).radius(8.0).continuous_corners().center_y().hover(t.red.alpha(0.1))
             .role("menuitem").label("Delete")
             .child(crate::icons::ico_s("trash", 16.0, t.red))
             .child(rune::text("Delete").font(crate::theme::ui(13.5, 500.0)).color(t.red))
@@ -126,7 +126,7 @@ fn project_menu(s: &App, t: &Theme, key: &str) -> El {
     let rows: Vec<El> = folders.iter().map(|path| {
         let on = path.trim_end_matches(['/', '\\']) == here.trim_end_matches(['/', '\\']);
         let p = path.clone();
-        rune::row().key(format!("project-menu/{path}")).w_full().h(FOLDER_ROW).px(10.0).gap(10.0).radius(8.0).center_y().hover(t.hover)
+        rune::row().key(format!("project-menu/{path}")).w_full().h(FOLDER_ROW).px(10.0).gap(10.0).radius(8.0).continuous_corners().center_y().hover(t.hover)
             .role("menuitem").label(crate::project::folder_name(path)).help(path.clone())
             .child(crate::icons::ico_s("oai-folder", 16.0, t.dim))
             .child(col().grow(1.0).min_w(0.0)
@@ -213,7 +213,7 @@ fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
     let brand = row().w(300.0).gap(9.0).center_y().pl(14.0 + insets.leading)
         .child(crate::logo::mark(22.0))
         .child(text("Yune").font(ui(14.5, 700.0)).color(t.text))
-        .child(el().px(6.0).h(18.0).radius(5.0).center().fill(t.accent.alpha(0.16)).child(text("Beta").font(ui(10.5, 700.0)).color(t.accent)));
+        .child(el().px(6.0).h(18.0).radius(5.0).continuous_corners().center().fill(t.accent.alpha(0.16)).child(text("Beta").font(ui(10.5, 700.0)).color(t.accent)));
     let win = |label: &'static str, glyph: El, close: bool, act: fn(&mut App, &mut Tx)| {
         el().w(46.0).h(TITLEBAR).center().role("button").label(label).no_window_drag()
             .hover(if close { theme::hex("#e81123") } else { t.hover })
@@ -251,7 +251,7 @@ fn rail(s: &App, t: &Theme) -> El {
     let waiting = s.data.waiting().len();
     let tab = |v: View, icon: &str, label: &'static str, badge: Option<String>| {
         let on = s.view == v;
-        el().key(format!("rail-{label}")).size(44.0, 44.0).radius(12.0).center().role("tab").label(label).checked(on).help(label).help_side(Side::Right)
+        el().key(format!("rail-{label}")).size(44.0, 44.0).radius(12.0).continuous_corners().center().role("tab").label(label).checked(on).help(label).help_side(Side::Right)
             .fill(if on { t.active } else { Color::TRANSPARENT }).hover(t.hover)
             .child(ico(icon, if on { t.text } else { t.faint }))
             .children(on.then(|| el().absolute(-8.0, 12.0).size(3.0, 20.0).corners([0.0, 3.0, 3.0, 0.0]).fill(t.text)))
