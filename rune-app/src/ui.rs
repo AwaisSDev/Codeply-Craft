@@ -120,7 +120,7 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
     let empty = s.edit(key).text.trim().is_empty() && s.attachments.get(&key).is_none_or(Vec::is_empty);
     let action = if running && stopping {
         // Pressed: it's stopping (the engine ends a run that won't stop on its own).
-        el().key(format!("stop-{}", key.name())).size(34.0, 34.0).radius(17.0).fill(t.control).center().role("button").label("Stopping").help("Stopping...")
+        el().key(format!("stop-{}", key.name())).size(34.0, 34.0).radius(17.0).fill(t.text.alpha(0.16)).center().role("button").label("Stopping").help("Stopping...")
             .child(crate::ui::orb(t, 16.0, s.reduced.get()))
     } else if running && empty {
         let chat = chat.clone().unwrap_or_default();
@@ -144,9 +144,9 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
             .child(ico_s("clock", 14.0, t.faint))
             .child(text("Queued").font(ui(12.5, 600.0)).color(t.dim))
             .child(text(first).font(ui(13.0, 400.0)).color(t.text).single_line().truncate().grow(1.0).min_w(0.0).help(words))
-            .child(row().key(format!("queued-now/{}", key.name())).h(26.0).px(10.0).gap(6.0).radius(13.0).center_y().fill(t.accent).hover(t.accent.alpha(0.85))
+            .child(row().key(format!("queued-now/{}", key.name())).h(26.0).px(10.0).gap(6.0).radius(8.0).continuous_corners().center_y().fill(t.accent).hover(t.accent.alpha(0.85))
                 .role("button").label("Send now").help(if running { "Stop this reply and send this now" } else { "Send this now" })
-                .child(text(if stopping { "Stopping..." } else { "Send now" }).font(ui(12.5, 600.0)).color(t.on_accent))
+                .child(text(if stopping { "Sending..." } else { "Send now" }).font(ui(12.5, 600.0)).color(t.on_accent))
                 .on_press(move |s: &mut App| s.send_queued_now(&now_chat)))
             .child(el().key(format!("queued-x/{}", key.name())).size(24.0, 24.0).radius(12.0).center().hover(t.hover).role("button").label("Remove from queue").help("Take it back")
                 .child(ico_s("close", 12.0, t.faint))
@@ -167,18 +167,8 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
         }))
         .child(el().grow(1.0))
         .children((!compact).then(|| {
-            // The model and its effort as one outlined pill ("Opus 5.5 High ▾"); it opens the
-            // picker: the effort as a slider, the model under it.
             let (name, effort) = s.data.extra.models.chip(&s.prefs.effort);
-            let menu_id = format!("model:{}", key.name());
-            let open = s.menu.as_deref() == Some(menu_id.as_str());
-            row().key(format!("model-chip/{}", key.name())).h(30.0).px(12.0).gap(6.0).radius(15.0).continuous_corners().center_y()
-                .border(1.0, if open { t.accent } else { t.accent.alpha(0.45) }).fill(if open { t.accent.alpha(0.1) } else { Color::TRANSPARENT }).hover(t.accent.alpha(0.08))
-                .role("button").label(format!("Model: {name}{}", effort.as_deref().map(|e| format!(", effort {e}")).unwrap_or_default()))
-                .child(text(name).font(ui(13.5, 600.0)).color(t.text).truncate())
-                .children(effort.map(|e| text(e).font(ui(13.5, 400.0)).color(t.dim)))
-                .child(ico_s("chevron-down", 15.0, t.dim))
-                .on_press(move |s: &mut App| s.toggle_menu(&menu_id))
+            chip(format!("model-chip/{}", key.name()), None, &name, effort.as_deref(), true, format!("model:{}", key.name()))
         }))
         .child(mic(s, t, key))
         .child(action);
@@ -213,10 +203,10 @@ fn mic(s: &App, t: &Theme, key: EditKey) -> El {
     let label = if recording { "Stop and transcribe" } else if transcribing { "Transcribing..." } else { "Voice" };
     let b = el().key(format!("mic-{}", key.name())).size(32.0, 32.0).radius(16.0).center().role("button").label(label).help(label)
         .on_press(move |s: &mut App| s.toggle_voice(key));
-    if recording {
-        b.fill(t.red).hover(t.red.alpha(0.85)).child(ico("mic", Color::WHITE).looping(rune::LoopSpec::opacity(1.2, 0.0, 0.55, 1.0)))
-    } else if transcribing {
-        b.fill(t.active).child(ico("mic", t.text).looping(rune::LoopSpec::opacity(0.9, 0.0, 0.3, 1.0)))
+    // Recording: the voice ring runs round the mic; transcribing spins it faster.
+    if recording || transcribing {
+        let ring = crate::effects::voice_ring(32.0, transcribing, s.reduced.get()).absolute(0.0, 0.0);
+        b.child(ring).child(ico("mic", if recording { t.text } else { t.dim }))
     } else {
         b.hover(t.hover).child(ico("mic", t.dim))
     }

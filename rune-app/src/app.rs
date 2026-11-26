@@ -411,6 +411,11 @@ pub struct App {
     /// Chats you pressed Stop in, and when: Stop shows "Stopping" until the run ends, and a
     /// queued message waits for that.
     pub stopping: std::collections::HashMap<String, f64>,
+    /// The send wave: which send it is (keys it, so each runs again) and when it ends.
+    pub wave: Option<(u32, std::time::Instant)>,
+    /// The thinking orb's frames (thinking_orb.rs), drawn while a reply is on its way.
+    pub orb: crate::thinking_orb::OrbPlayer,
+    pub waves: u32,
     /// Settings > Skills: where they came from ("" all, "built-in", "plugin", "user"), and how
     /// many show before "Show more".
     pub skills_from: &'static str,
@@ -515,6 +520,9 @@ impl App {
             last_sent: None,
             queued: std::collections::HashMap::new(),
             stopping: std::collections::HashMap::new(),
+            wave: None,
+            orb: Default::default(),
+            waves: 0,
             skills_from: "",
             skills_limit: crate::views::skills::PAGE,
             code_others: std::collections::HashMap::new(),
@@ -671,11 +679,23 @@ impl App {
         }
     }
 
+    /// The send wave rises out of the composer (effects::send_wave), for most of a second.
+    fn start_wave(&mut self) {
+        if self.reduced.get() {
+            return;
+        }
+        self.waves += 1;
+        self.wave = Some((self.waves, std::time::Instant::now() + std::time::Duration::from_millis(700)));
+    }
+
     /// Sends a chat's queued message.
     fn flush_queued(&mut self, chat: &str) {
         let Some(q) = self.queued.remove(chat) else { return };
         match self.store.send_refs(&q.to, &q.text, &q.files, &q.refs, &mut self.data) {
-            Ok(()) => self.last_sent = Some(crate::mentions::body(&q.text, &q.files, &q.refs)),
+            Ok(()) => {
+                self.last_sent = Some(crate::mentions::body(&q.text, &q.files, &q.refs));
+                self.start_wave();
+            }
             Err(e) => self.notice = Some(e),
         }
     }
@@ -994,6 +1014,7 @@ impl App {
         match self.store.send_refs(&to, &text, &files, &refs, &mut self.data) {
             Ok(()) => {
                 self.last_sent = Some(crate::mentions::body(&text, &files, &refs));
+                self.start_wave();
                 if self.mention.as_ref().is_some_and(|p| p.key == key) {
                     self.mention = None;
                 }
@@ -1678,6 +1699,8 @@ impl App {
             tx.wake_after(std::time::Duration::from_secs_f64(1.0 - now.fract().min(0.99)));
         }
         self.think_now = now;
+        // The orb plays only while some chat waits on its reply.
+        self.orb.set_running(!self.think_started.is_empty() && !self.reduced.get());
         // Stop: "Stopping" until the run has ended (the engine ends a run that won't stop after
         // ten seconds; past twenty, the app stops waiting too).
         let stopping = self.stopping.len();
@@ -1691,6 +1714,16 @@ impl App {
         }
         if !self.queued.is_empty() || !self.stopping.is_empty() {
             tx.wake_after(std::time::Duration::from_millis(250));
+        }
+        // The send wave leaves once its moment is over (its exit carries it up and out).
+        if let Some((_, until)) = self.wave {
+            let left = until.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                self.wave = None;
+                changed = true;
+            } else {
+                tx.wake_after(left);
+            }
         }
         // A chat the store made for you (a new chat from "What should we build?") opens itself.
         if let Some(title) = self.store.take_focus() {

@@ -11,6 +11,8 @@ mod app;
 mod autostart;
 mod art;
 mod bot;
+mod effects;
+mod thinking_orb;
 mod browser;
 mod complete;
 mod editor;
@@ -397,6 +399,26 @@ export function launch(date: Date) {
 ###### Last updated today
 "##.into()));
         s.data.threads.push(("Casual chat".into(), items));
+    }),
+    // A message just went: the send wave rising out of the composer.
+    ("chat-sent", |s| {
+        s.open_chat("Casual chat");
+        s.waves = 1;
+        s.wave = Some((1, std::time::Instant::now() + std::time::Duration::from_secs(60)));
+    }),
+    // Send now pressed: the reply stopping for the queued message.
+    ("chat-sending", |s| {
+        s.open_chat("Casual chat");
+        if let Some(c) = s.data.extra.chats.iter_mut().find(|c| c.title == "Casual chat") {
+            c.running = true;
+        }
+        s.queued.insert("Casual chat".into(), crate::app::Queued {
+            to: store::Target::Chat("Casual chat".into()),
+            text: "Also add a dark mode toggle to the header".into(),
+            files: Vec::new(),
+            refs: Vec::new(),
+        });
+        s.stopping.insert("Casual chat".into(), 0.0);
     }),
     ("chat-steps", |s| {
         s.open_chat("Casual chat");

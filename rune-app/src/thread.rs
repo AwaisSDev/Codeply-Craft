@@ -236,6 +236,8 @@ pub fn with_composer(s: &App, t: &Theme, chat: &str, who: &str, key: EditKey, ta
     let body = transcript(s, t, chat, who, width);
     el().w_full().h_full()
         .child(if room > 0.0 { col().w_full().h_full().pb(room).child(body) } else { body })
+        // A message just went: colour rises out of the composer.
+        .children(s.wave.map(|(n, _)| crate::effects::send_wave(n)))
         .child(dock)
 }
 
@@ -306,7 +308,7 @@ fn activity(s: &App, t: &Theme, chat: &str, turn: usize, live: Option<(usize, &[
     let open = s.expanded.contains(&key);
     let toggle_key = key.clone();
     let head = row().key(key.clone()).w_full().min_w(0.0).gap(10.0).py(4.0).center_y().role("button").label(word.clone()).checked(open).help(word.clone())
-        .child(crate::ui::orb(t, 14.0, still))
+        .child(s.orb.view(t.dark, still))
         // A new key per word, so each word fades in as it arrives.
         .child(el().key(format!("activity-word/{chat}/{word_key}")).shrink().min_w(0.0).clip_rounded(0.0)
             .transition(crate::ui::fade_in()).motion(crate::ui::ENTER)

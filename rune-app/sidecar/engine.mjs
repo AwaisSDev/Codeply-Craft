@@ -737,6 +737,66 @@ function routeFor(session) {
   return { auto: true };
 }
 
+// ---------- the context layer ----------
+// The engine's session holds the conversation, but not a record of the work: after a restart or
+// a long chat the model can't tell which files it made or changed, and guesses. Every turn starts
+// with this chat's own record of what was asked and what was done, built from what the app keeps
+// (session.messages, which survives restarts). Facts only: files changed, commands run, agents
+// brought in, and each reply's gist.
+const CONTEXT_TURNS = 12; // turns listed in full, newest last
+const CONTEXT_FILES = 30; // files listed
+const CONTEXT_CHARS = 4000; // the whole layer, at most
+const CHANGE = /^(Created|Edited|Wrote|Deleted|Removed|Moved|Renamed|Patched)\s+(.+?)(\s+\(failed\))?$/;
+
+function contextLayer(session) {
+  const msgs = session.messages || [];
+  const turns = [];
+  let cur = null;
+  for (const m of msgs) {
+    if (m.kind === 'user') {
+      cur = { asked: String(m.text || ''), changes: [], ran: 0, read: 0, other: 0, agents: new Set(), said: '' };
+      turns.push(cur);
+      continue;
+    }
+    if (!cur) continue;
+    if (m.kind === 'tool') {
+      const label = String(m.label || '').replace(/`/g, '');
+      const c = CHANGE.exec(label);
+      if (c && !c[3]) cur.changes.push([c[1].toLowerCase(), c[2].trim()]);
+      else if (/^Ran\b/.test(label)) cur.ran++;
+      else if (/^(Read|Looked at|Listed|Found|Searched for)\b/.test(label)) cur.read++;
+      else cur.other++;
+    } else if (m.kind === 'team' && m.agent) {
+      cur.agents.add(m.agent);
+    } else if (m.kind === 'assistant' && m.text && !m.interim && !m.agent) {
+      cur.said = String(m.text);
+    }
+  }
+  if (!turns.some((t) => t.changes.length || t.ran || t.agents.size || t.said)) return '';
+  const one = (x, n) => { const t = String(x || '').replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
+  // Every file the chat changed, the latest change first.
+  const files = new Map();
+  turns.forEach((t, i) => t.changes.forEach(([verb, file]) => { files.delete(file); files.set(file, `${verb} in turn ${i + 1}`); }));
+  const fileLines = [...files.entries()].reverse().slice(0, CONTEXT_FILES).map(([f, how]) => `- ${f} (${how})`);
+  const from = Math.max(0, turns.length - CONTEXT_TURNS);
+  const turnLines = turns.slice(from).map((t, k) => {
+    const did = [];
+    const byVerb = {};
+    for (const [verb, file] of t.changes) (byVerb[verb] = byVerb[verb] || []).push(file.split(/[\\/]/).pop());
+    for (const [verb, list] of Object.entries(byVerb)) did.push(`${verb} ${[...new Set(list)].slice(0, 8).join(', ')}${list.length > 8 ? ` +${list.length - 8} more` : ''}`);
+    if (t.ran) did.push(`ran ${t.ran} command${t.ran > 1 ? 's' : ''}`);
+    if (t.read) did.push(`looked at ${t.read} file${t.read > 1 ? 's' : ''}`);
+    if (t.agents.size) did.push(`brought in ${[...t.agents].join(', ')}`);
+    const n = from + k + 1;
+    return `${n}. Asked: "${one(t.asked, 220)}"${did.length ? `\n   Did: ${did.join('; ')}` : ''}${t.said ? `\n   Replied: ${one(t.said, 240)}` : ''}`;
+  });
+  let out = `CHAT CONTEXT (Yune's own record of this chat, kept across restarts. It is what really happened here: trust it over guesses, and read the files it names before you say what they hold)\n`
+    + `Work so far${from ? ` (the last ${turns.length - from} of ${turns.length} turns)` : ''}:\n${turnLines.join('\n')}`
+    + (fileLines.length ? `\nFiles this chat changed, latest first:\n${fileLines.join('\n')}` : '');
+  if (out.length > CONTEXT_CHARS) out = `${out.slice(0, CONTEXT_CHARS - 1)}…`;
+  return `${out}\n---\n\n`;
+}
+
 const CATCH_UP_TURNS = 16; // messages a DSH session that missed them gets, newest last
 const CATCH_UP_CHARS = 2000; // per message
 
@@ -905,7 +965,8 @@ async function startRun(session, text, opts = {}) {
     try { note += (await h(session, refs)) || ''; } catch (e) { console.error('prompt:', e && e.message); }
   }
   const askAgents = refs.some((r) => r && r.kind === 'agent');
-  const prompt = note + (files.length ? `${text}\n\nAttached files:\n${files.map((f) => `- ${f}`).join('\n')}` : text);
+  const layer = opts.resume ? '' : contextLayer(session);
+  const prompt = layer + note + (files.length ? `${text}\n\nAttached files:\n${files.map((f) => `- ${f}`).join('\n')}` : text);
   if (!opts.resume) session.messages.push({ kind: 'user', text, ...(files.length ? { files } : {}), at: Date.now() });
   const from = session.messages.length;
   if (!opts.resume && session.messages.filter((m) => m.kind === 'user').length === 1 && (!session.title || session.title === 'New chat')) {
