@@ -283,6 +283,54 @@ pub fn wave(src: &str, style: rune::TextStyle, color: Color) -> El {
     }))
 }
 
+/// A light flowing left to right across text, letter by letter: each character loops its own
+/// opacity a little after the one before it, so a single word ("Noodling…") shimmers too,
+/// unlike `wave`, which steps a whole word at a time. With `still` (reduced motion) it's plain
+/// text. Anything over `max` characters is cut with "…" (the row can't truncate letters).
+pub fn shimmer(src: &str, style: rune::TextStyle, color: Color, max: usize, still: bool) -> El {
+    const PERIOD: f64 = 1.8;
+    const STEP: f64 = 0.055;
+    let cut: String = if src.chars().count() > max { src.chars().take(max.saturating_sub(1)).collect::<String>().trim_end().to_owned() + "…" } else { src.to_owned() };
+    if still {
+        return text(cut).font(style).color(color).single_line();
+    }
+    // A space rides at the front of the letter after it (a lone space has no width).
+    let mut glyphs: Vec<String> = Vec::new();
+    let mut pending = String::new();
+    for ch in cut.chars() {
+        if ch == ' ' && !glyphs.is_empty() {
+            pending.push(ch);
+        } else {
+            glyphs.push(std::mem::take(&mut pending) + &ch.to_string());
+        }
+    }
+    row().gap(0.0).center_y().children(glyphs.into_iter().enumerate().map(|(i, g)| {
+        text(g).font(style).color(color).looping(rune::LoopSpec::opacity(PERIOD, i as f64 * STEP, 0.3, 1.0))
+    }))
+}
+
+/// A quarter of a ring, for the orb's turning arc.
+static ORB_ARC: rune::Icon = rune::Icon {
+    name: "orb-arc",
+    view: 24.0,
+    body: r#"<path d="M12 2.5A9.5 9.5 0 0 1 21.5 12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>"#,
+};
+
+/// The small round spinner beside the activity word: a faint ring, an arc turning around it,
+/// and a core that breathes in time with the word's shimmer. Held still under reduced motion.
+pub fn orb(t: &Theme, size: f32, still: bool) -> El {
+    let core = size * 0.36;
+    let ring = el().absolute(0.0, 0.0).size(size, size).radius(size / 2.0).border((size * 0.11).max(1.0), t.faint.alpha(0.35));
+    let arc = el().absolute(0.0, 0.0).size(size, size).child(rune::icon(&ORB_ARC, size).color(t.text));
+    let dot = el().absolute((size - core) / 2.0, (size - core) / 2.0).size(core, core).radius(core / 2.0).fill(t.text);
+    let (arc, dot) = if still {
+        (arc, dot.opacity(0.8))
+    } else {
+        (arc.looping(rune::LoopSpec::rotation(1.1)), dot.looping(rune::LoopSpec::opacity(1.8, 0.0, 0.35, 1.0)))
+    };
+    el().size(size, size).inert().child(ring).child(arc).child(dot)
+}
+
 /// Whether a path is a picture the app can show.
 pub fn is_picture(path: &str) -> bool {
     let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();

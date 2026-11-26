@@ -28,6 +28,9 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
     let streaming_at = if running { items.iter().rposition(|i| matches!(i, ThreadItem::Them(_))) } else { None };
     let mut i = 0;
     let mut n = 0;
+    // The steps still running (the group at the very end while the chat runs): they go inside
+    // the activity row's dropdown, not a header of their own.
+    let mut live_steps: Option<(usize, usize)> = None;
     while i < items.len() {
         // Consecutive tool calls fold into one line, unless Settings says show them.
         if matches!(items[i], ThreadItem::Event { .. }) && !s.prefs.show_tools {
@@ -35,8 +38,12 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
             while i < items.len() && matches!(items[i], ThreadItem::Event { .. }) {
                 i += 1;
             }
-            body = body.child(enter(steps(s, t, chat, start, &items[start..i], running && i == items.len()), n));
-            n += 1;
+            if running && i == items.len() {
+                live_steps = Some((start, i));
+            } else {
+                body = body.child(enter(steps(s, t, chat, start, &items[start..i]), n));
+                n += 1;
+            }
             continue;
         }
         let e = match &items[i] {
@@ -75,12 +82,12 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
         n += 1;
         i += 1;
     }
-    // Thinking: the reply hasn't started yet. As the Electron app shows it: a shimmering word
-    // that changes every few seconds, three dots, and the seconds so far.
-    let stepping = s.data.extra.step_now.iter().any(|(c, _)| c == chat) && matches!(items.last(), Some(ThreadItem::Event { .. }));
-    if running && !matches!(items.last(), Some(ThreadItem::Them(_))) && !stepping {
-        let _ = who;
-        body = body.child(thinking(s, t, chat));
+    // While the reply hasn't started: one activity row (orb, the step or a thinking word, a
+    // chevron), with the time so far and the steps inside.
+    if running && !matches!(items.last(), Some(ThreadItem::Them(_))) {
+        let turn = items.iter().rposition(|i| matches!(i, ThreadItem::You(_))).unwrap_or(0);
+        let live = live_steps.map(|(a, b)| (a, &items[a..b]));
+        body = body.child(activity(s, t, chat, turn, live));
     }
     col().key(format!("thread/{chat}")).w_full().h_full().items_center().scroll(ScrollSpec { stick_bottom: true }).child(body)
 }
@@ -161,35 +168,34 @@ fn command_step(s: &App, t: &Theme, key: &str, icon: &'static str, x: &str, d: &
     c
 }
 
-/// Steps, as the Electron app shows them: while it works, the step running now heads the
-/// group and the steps so far are listed under it; once done, they fold into one line that
-/// says what they did, and open on a click.
-fn steps(s: &App, t: &Theme, chat: &str, start: usize, items: &[ThreadItem], live: bool) -> El {
+/// The steps a run took, folded into one line that says what they did ("Read 4 files, edited
+/// index.html"); a click opens the list, each command with what it ran and printed. (While
+/// the run is going, its steps live in the activity row instead.)
+fn steps(s: &App, t: &Theme, chat: &str, start: usize, items: &[ThreadItem]) -> El {
     let key = format!("steps/{chat}/{start}");
-    // Open while it works (unless you closed it); folded after (unless you opened it).
-    let toggled = s.expanded.contains(&key);
-    let open = if live { !toggled } else { toggled };
-    let now = s.data.extra.step_now.iter().find(|(c, _)| c == chat).map(|(_, l)| l.replace('`', ""));
-    let label = if live { now.clone().unwrap_or_else(|| "Working".to_owned()) } else { steps_summary(items) };
+    let open = s.expanded.contains(&key);
+    let label = steps_summary(items);
     let toggle_key = key.clone();
-    let shown = if live { crate::ui::wave(&label, ui(13.0, 500.0), t.text) } else { text(label.clone()).font(ui(13.0, 500.0)).color(t.faint).single_line().truncate().min_w(0.0) };
-    let head = row().key(key.clone()).w_full().min_w(0.0).gap(6.0).py(4.0).center_y().role("button").label(label.clone()).checked(open).help(label)
-        .child(shown)
+    let head = row().key(key.clone()).w_full().min_w(0.0).gap(6.0).py(4.0).center_y().role("button").label(label.clone()).checked(open).help(label.clone())
+        .child(text(label).font(ui(13.0, 500.0)).color(t.faint).single_line().truncate().min_w(0.0))
         .child(ico_s(if open { "chevron-down" } else { "chevron-right" }, 14.0, t.faint))
         .on_press(move |s: &mut App| s.toggle_expanded(&toggle_key));
     let mut c = col().w_full().min_w(0.0).my(4.0).gap(2.0).child(head);
     if open {
-        // The newest few while it works, so the list never pushes the reply off screen.
-        let skip = if live { items.len().saturating_sub(8) } else { 0 };
-        c = c.child(col().w_full().min_w(0.0).gap(2.0).border_sides([0.0, 0.0, 0.0, 1.0], t.border).ml(6.0).pl(12.0)
-            .children((skip > 0).then(|| text(format!("{skip} earlier steps")).font(ui(12.0, 400.0)).color(t.faint)))
-            .children(items[skip..].iter().enumerate().map(|(k, it)| match it {
-                ThreadItem::Event { icon, text: x, detail: Some(d) } => command_step(s, t, &format!("{key}/{}", skip + k), icon, x, d),
-                ThreadItem::Event { icon, text: x, .. } => step_row(t, icon, x, false),
-                _ => el(),
-            })));
+        c = c.child(step_list(s, t, &key, items, 0));
     }
     c
+}
+
+/// The steps under an open group, from `skip` on, with a line for the ones left out.
+fn step_list(s: &App, t: &Theme, key: &str, items: &[ThreadItem], skip: usize) -> El {
+    col().w_full().min_w(0.0).gap(2.0).border_sides([0.0, 0.0, 0.0, 1.0], t.border).ml(6.0).pl(12.0)
+        .children((skip > 0).then(|| text(format!("{skip} earlier steps")).font(ui(12.0, 400.0)).color(t.faint)))
+        .children(items[skip..].iter().enumerate().map(|(k, it)| match it {
+            ThreadItem::Event { icon, text: x, detail: Some(d) } => command_step(s, t, &format!("{key}/{}", skip + k), icon, x, d),
+            ThreadItem::Event { icon, text: x, .. } => step_row(t, icon, x, false),
+            _ => el(),
+        }))
 }
 
 /// The engine asks before it acts: what it wants to do, and three answers.
@@ -274,22 +280,50 @@ pub const THINK_WORDS: &[&str] = &["Thinking", "Pondering", "Noodling", "Mulling
 /// How long each word shows (app.js THINK_EVERY_MS).
 pub const THINK_EVERY: f64 = 2.3;
 
-/// "Noodling ··· 4s": the line under a message while its reply hasn't started.
-fn thinking(s: &App, t: &Theme, chat: &str) -> El {
+/// "4s", "1m 05s": how long a run has been going.
+fn elapsed_label(secs: u64) -> String {
+    if secs < 60 { format!("{secs}s") } else { format!("{}m {:02}s", secs / 60, secs % 60) }
+}
+
+/// The one row a chat shows while its reply hasn't started: an orb, what it's doing in a
+/// shimmering word ("Editing index.html", or a thinking word that changes every few seconds:
+/// "Noodling…"), and a chevron. Opened, it shows the time so far and the steps run so far, each
+/// command with what it ran and printed. Folded by default; `turn` keys it to this message.
+fn activity(s: &App, t: &Theme, chat: &str, turn: usize, live: Option<(usize, &[ThreadItem])>) -> El {
+    let still = s.reduced.get();
     let since = s.think_started.get(chat).copied().unwrap_or(s.think_now);
     let elapsed = (s.think_now - since).max(0.0);
-    let turn = if s.reduced.get() { 0 } else { (elapsed / THINK_EVERY) as usize };
-    // What it's doing right now ("Editing index.html"), as the Electron app shows it; the
-    // thinking words only while it's between steps.
-    let step = s.data.extra.step_now.iter().find(|(c, _)| c == chat).map(|(_, l)| l.clone());
-    let turn = if step.is_some() { usize::MAX - 1 } else { turn };
-    let word = step.unwrap_or_else(|| THINK_WORDS[turn % THINK_WORDS.len()].to_owned());
-    let dot = |i: usize| el().size(4.0, 4.0).radius(2.0).fill(t.dim)
-        .looping(rune::LoopSpec::opacity(1.0, i as f64 * 0.16, 0.2, 1.0));
-    row().key(format!("thinking/{chat}")).gap(8.0).my(8.0).center_y().transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
+    // What it's doing right now, as the Electron app shows it; a thinking word between steps.
+    let step = s.data.extra.step_now.iter().find(|(c, _)| c == chat).map(|(_, l)| l.replace('`', ""));
+    let (word_key, word) = match step {
+        Some(l) => (format!("step/{l}"), l),
+        None => {
+            let n = if still { 0 } else { (elapsed / THINK_EVERY) as usize };
+            (format!("think/{n}"), format!("{}…", THINK_WORDS[n % THINK_WORDS.len()]))
+        }
+    };
+    let key = format!("activity/{chat}/{turn}");
+    let open = s.expanded.contains(&key);
+    let toggle_key = key.clone();
+    let head = row().key(key.clone()).w_full().min_w(0.0).gap(10.0).py(4.0).center_y().role("button").label(word.clone()).checked(open).help(word.clone())
+        .child(crate::ui::orb(t, 14.0, still))
         // A new key per word, so each word fades in as it arrives.
-        .child(el().key(format!("think-word/{turn}")).transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
-            .child(crate::ui::wave(&word, ui(14.0, 450.0), t.text)))
-        .child(row().gap(3.0).center_y().child(dot(0)).child(dot(1)).child(dot(2)))
-        .child(text(format!("{}s", elapsed as u64)).font(ui(12.5, 400.0)).color(t.faint))
+        .child(el().key(format!("activity-word/{chat}/{word_key}")).shrink().min_w(0.0).clip_rounded(0.0)
+            .transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
+            .child(crate::ui::shimmer(&word, ui(14.0, 450.0), t.text, 40, still)))
+        .child(ico_s(if open { "chevron-up" } else { "chevron-down" }, 14.0, t.faint))
+        .on_press(move |s: &mut App| s.toggle_expanded(&toggle_key));
+    let mut c = col().key(format!("activity/{chat}")).w_full().min_w(0.0).my(6.0).gap(4.0)
+        .transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
+        .child(head);
+    if open {
+        c = c.child(row().ml(2.0).gap(6.0).center_y()
+            .child(ico_s("clock", 13.0, t.faint))
+            .child(text(format!("{} so far", elapsed_label(elapsed as u64))).font(ui(12.5, 400.0)).color(t.faint)));
+        if let Some((start, items)) = live {
+            // The newest few, so the list never pushes the reply off screen.
+            c = c.child(step_list(s, t, &format!("steps/{chat}/{start}"), items, items.len().saturating_sub(8)));
+        }
+    }
+    c
 }
