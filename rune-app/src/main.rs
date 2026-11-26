@@ -275,6 +275,22 @@ const SCENES: &[Scene] = &[
         ]));
     }),
     ("chat-search", |s| { s.new_chat(); s.chat_search = true; s.edit_mut(EditKey::Search).replace_text("pricing"); }),
+    // A message written while the reply runs: it waits above the composer, with Send now.
+    ("chat-queued", |s| {
+        s.open_chat("Casual chat");
+        if let Some(c) = s.data.extra.chats.iter_mut().find(|c| c.title == "Casual chat") {
+            c.running = true;
+        }
+        let mut items = s.data.thread("Casual chat").to_vec();
+        items.push(crate::model::ThreadItem::You("Can you check the build before I ship?".into()));
+        s.data.threads.push(("Casual chat".into(), items));
+        s.queued.insert("Casual chat".into(), crate::app::Queued {
+            to: store::Target::Chat("Casual chat".into()),
+            text: "Also add a dark mode toggle to the header".into(),
+            files: Vec::new(),
+            refs: Vec::new(),
+        });
+    }),
     ("chat-steps", |s| {
         s.open_chat("Casual chat");
         if let Some(c) = s.data.extra.chats.iter_mut().find(|c| c.title == "Casual chat") {
