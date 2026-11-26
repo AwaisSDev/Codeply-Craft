@@ -907,7 +907,6 @@ pub fn render(src: &str, t: &Theme, streaming: bool) -> El {
 
 /// [`render`] for a reply in a chat: document cards open and close, and widgets show their
 /// code, kept in `s.expanded` under `md/{id}/...`. `id` names the reply ("chat title/index").
-#[allow(dead_code)] // until thread.rs draws replies with it
 pub fn reply(s: &App, id: &str, src: &str, t: &Theme, streaming: bool) -> El {
     let cx = Ctx { t, open: Some(&s.expanded), id, cards: Cell::new(0) };
     stack(&cx, &parse(src), t.text, 0, streaming)

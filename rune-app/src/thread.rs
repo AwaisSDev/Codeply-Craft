@@ -56,7 +56,7 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
                     .child(text(shown_message(x)).font(ui(15.0, 400.0).lh((15.0 * theme::text_scale() * theme::READ_LH).round())).color(t.text).wrap().shrink().min_w(0.0).selectable(true))),
             ThreadItem::Them(x) => {
                 let live = streaming_at == Some(i) && s.prefs.reveal;
-                row().w_full().my(6.0).child(markdown::render(x, t, live).max_w(width - 48.0))
+                row().w_full().my(6.0).child(markdown::reply(s, &format!("{chat}/{i}"), x, t, live).max_w(width - 48.0))
             }
             ThreadItem::Team { text: x, agents } => {
                 // Wraps in a narrow column (the chat beside the workspace panes); each agent's
