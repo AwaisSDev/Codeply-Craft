@@ -4,13 +4,15 @@
 //! and brighter). The geometry is a straight port of `engine/orbits.ts` and `engine/core.ts` at
 //! the 20 pt preset; the ink is Yune's, the logo's blue to mint.
 //!
-//! Rune has no per-frame drawing hook, so a thread rasterizes frames into a `Pixels` image while
-//! a reply is on its way and the element shows the latest one.
+//! Rune has no per-frame drawing hook, so the loop is drawn once, `FRAMES` still images, and each
+//! shows in its own slice of a wall-clock opacity cycle: the renderer plays them like any loop.
+//! (Streaming a `Pixels` image from a thread instead made Windows' first, CPU-drawn frames show a
+//! stretched corner of the window.) The orbits are tuned to close the loop: each particle makes
+//! whole laps in `LOOP` seconds.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::cell::OnceCell;
 
-use rune::{El, el};
+use rune::{Cycle, El, el};
 
 /// The pixels drawn per point, so the orb stays sharp on high-density screens.
 const DENSITY: f32 = 3.0;
@@ -18,6 +20,11 @@ const DENSITY: f32 = 3.0;
 pub const SIZE: f32 = 20.0;
 /// The library's speed for the 20 pt "working" preset, and a little more.
 const SPEED: f32 = 3.9 * 1.35;
+/// One loop of the orb, seconds, and the frames drawn for it.
+const LOOP: f32 = 2.0;
+const FRAMES: usize = 60;
+/// Frame k shows while the loop is in [k / FRAMES, (k + 1) / FRAMES).
+static SLOT: [(f32, f32); 4] = [(0.0, 1.0), (1.0 / FRAMES as f32, 1.0), (1.0 / FRAMES as f32 + 1e-4, 0.0), (1.0, 0.0)];
 
 /// One dot of a frame: where, how far back, how big, and its ink (0 darkest, as the library has it).
 struct Dot {
@@ -67,10 +74,12 @@ fn frame(size: f32, t: f32) -> Vec<Dot> {
         ux /= ul;
         uy /= ul;
         let (vx, vy, vz) = (ny * uz - nz * uy, nz * ux - nx * uz, nx * uy - ny * ux);
-        let speed = (0.25 + 0.55 * h3) * if h3 > 0.5 { 1.0 } else { -1.0 };
+        // whole laps per loop, so the last frame meets the first
+        let lap = std::f32::consts::TAU / (LOOP * SPEED);
+        let speed = ((0.25 + 0.55 * h3) / lap).round().max(1.0) * lap * if h3 > 0.5 { 1.0 } else { -1.0 };
         let at = |a: f32| {
             let p = [(ux * a.cos() + vx * a.sin()) * ro, (uy * a.cos() + vy * a.sin()) * ro, (uz * a.cos() + vz * a.sin()) * ro];
-            project(t * 0.12, 0.3, c, c, p)
+            project(0.6, 0.3, c, c, p)
         };
         for k in 0..ghost_n {
             let [x, y, z] = at(k as f32 / ghost_n as f32 * std::f32::consts::TAU);
@@ -144,54 +153,37 @@ fn raster(size: f32, t: f32, dark: bool) -> (u32, Vec<u8>) {
     (px as u32, out)
 }
 
-/// The orb's frames: a thread draws one every ~33 ms while `running`, into the image the view shows.
+/// The orb's frames, drawn once per theme.
+#[derive(Default)]
 pub struct OrbPlayer {
-    pixels: rune::Pixels,
-    running: Arc<AtomicBool>,
-    dark: Arc<AtomicBool>,
-    started: AtomicBool,
-}
-
-impl Default for OrbPlayer {
-    fn default() -> Self {
-        OrbPlayer { pixels: rune::Pixels::new(), running: Arc::new(AtomicBool::new(false)), dark: Arc::new(AtomicBool::new(true)), started: AtomicBool::new(false) }
-    }
+    dark: OnceCell<Vec<rune::Pixels>>,
+    light: OnceCell<Vec<rune::Pixels>>,
 }
 
 impl OrbPlayer {
-    /// Plays while a reply is on its way, rests otherwise.
-    pub fn set_running(&self, on: bool) {
-        self.running.store(on, Ordering::Relaxed);
-        if on && !self.started.swap(true, Ordering::Relaxed) {
-            let (pixels, running, dark) = (self.pixels.clone(), self.running.clone(), self.dark.clone());
-            std::thread::Builder::new().name("thinking-orb".into()).spawn(move || {
-                let start = std::time::Instant::now();
-                loop {
-                    if running.load(Ordering::Relaxed) {
-                        let (n, rgba) = raster(SIZE, start.elapsed().as_secs_f32() * SPEED, dark.load(Ordering::Relaxed));
-                        pixels.set(n, n, rgba);
-                        std::thread::sleep(std::time::Duration::from_millis(33));
-                    } else {
-                        std::thread::sleep(std::time::Duration::from_millis(120));
-                    }
-                }
-            }).ok();
-        }
-    }
-
-    /// The orb, `SIZE` points square. Still (reduced motion), it's one fixed frame.
-    pub fn view(&self, dark: bool, still: bool) -> El {
-        self.dark.store(dark, Ordering::Relaxed);
-        if still || self.pixels.size().0 == 0 {
-            let (n, rgba) = raster(SIZE, 0.6 * SPEED, dark);
-            if still {
+    fn frames(&self, dark: bool) -> &Vec<rune::Pixels> {
+        let cell = if dark { &self.dark } else { &self.light };
+        cell.get_or_init(|| {
+            (0..FRAMES).map(|k| {
+                let (n, rgba) = raster(SIZE, k as f32 / FRAMES as f32 * LOOP * SPEED, dark);
                 let px = rune::Pixels::new();
                 px.set(n, n, rgba);
-                return el().size(SIZE, SIZE).inert().pixels(&px);
-            }
-            self.pixels.set(n, n, rgba);
+                px
+            }).collect()
+        })
+    }
+
+    /// The orb, `SIZE` points square: its frames stacked, each lit in its turn. Still (reduced
+    /// motion), the first frame alone.
+    pub fn view(&self, dark: bool, still: bool) -> El {
+        let frames = self.frames(dark);
+        if still {
+            return el().size(SIZE, SIZE).inert().pixels(&frames[0]);
         }
-        el().size(SIZE, SIZE).inert().pixels(&self.pixels)
+        el().size(SIZE, SIZE).inert().children(frames.iter().enumerate().map(|(k, px)| {
+            el().absolute(0.0, 0.0).size(SIZE, SIZE).pixels(px)
+                .cycle(Cycle { period: LOOP, phase: k as f32 / FRAMES as f32, stops: &SLOT, still: if k == 0 { 1.0 } else { 0.0 }, fps: 30.0 })
+        }))
     }
 }
 
@@ -209,6 +201,13 @@ mod tests {
         let (n, rgba) = raster(SIZE, 1.0, true);
         assert_eq!(rgba.len(), (n * n * 4) as usize);
         assert!(rgba.chunks(4).any(|p| p[3] > 200), "particles show");
+    }
+
+    #[test]
+    fn the_loop_closes() {
+        let a: Vec<(f32, f32)> = frame(SIZE, 0.0).iter().map(|d| (d.x, d.y)).collect();
+        let b: Vec<(f32, f32)> = frame(SIZE, LOOP * SPEED).iter().map(|d| (d.x, d.y)).collect();
+        assert!(a.iter().zip(&b).all(|(p, q)| (p.0 - q.0).abs() < 0.01 && (p.1 - q.1).abs() < 0.01));
     }
 
     #[test]

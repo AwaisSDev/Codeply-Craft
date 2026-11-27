@@ -1683,8 +1683,6 @@ impl App {
             tx.wake_after(std::time::Duration::from_secs_f64(1.0 - now.fract().min(0.99)));
         }
         self.think_now = now;
-        // The orb plays only while some chat waits on its reply.
-        self.orb.set_running(!self.think_started.is_empty() && !self.reduced.get());
         // Stop: "Stopping" until the run has ended (the engine ends a run that won't stop after
         // ten seconds; past twenty, the app stops waiting too).
         let stopping = self.stopping.len();
