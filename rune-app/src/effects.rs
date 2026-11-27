@@ -4,7 +4,7 @@
 //! rising out of the composer when a message goes). All of them run on Rune's own loops, so
 //! nothing rebuilds while they move, and each holds still under reduced motion.
 
-use rune::{Color, El, Shape, Vec2, canvas, el};
+use rune::{Color, El, Shape, canvas, el};
 
 use crate::theme::hex;
 
@@ -130,22 +130,6 @@ pub fn border_beam(radius: f32, still: bool) -> El {
     el().key("border-beam").pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).radius(radius).continuous_corners().clip_rounded(radius).inert()
         .child(edge(true, 0.0))
         .child(edge(false, LAP / 2.0))
-}
-
-/// The send wave: colour rising out of the composer when a message goes, blurred, its middle
-/// clearing first; it comes in on its own transition and leaves when the app drops it. `n` keys
-/// each send, so a new one runs again.
-pub fn send_wave(n: u32) -> El {
-    let p = palette();
-    let mut t = rune::Transition::identity();
-    t.insertion = rune::Effect { opacity: 0.0, offset: Vec2::new(0.0, 120.0), ..rune::Effect::IDENTITY };
-    t.removal = rune::Effect { opacity: 0.0, offset: Vec2::new(0.0, -220.0), ..rune::Effect::IDENTITY };
-    t.springs = rune::SpringPair::new(rune::Spring::new(0.55, 0.0), rune::Spring::new(0.9, 0.0));
-    el().key(format!("send-wave/{n}")).pin(Some(0.0), None, Some(0.0), Some(60.0)).h(260.0).inert()
-        .radial_gradient([0.5, 1.0], [620.0, 260.0], [(0.0, p[1].alpha(0.0)), (0.35, p[0].alpha(0.22)), (0.6, p[1].alpha(0.28)),
-            (0.8, p[2].alpha(0.18)), (1.0, p[3].alpha(0.0))])
-        .blur(18.0)
-        .transition(t)
 }
 
 #[cfg(test)]

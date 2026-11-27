@@ -236,8 +236,6 @@ pub fn with_composer(s: &App, t: &Theme, chat: &str, who: &str, key: EditKey, ta
     let body = transcript(s, t, chat, who, width);
     el().w_full().h_full()
         .child(if room > 0.0 { col().w_full().h_full().pb(room).child(body) } else { body })
-        // A message just went: colour rises out of the composer.
-        .children(s.wave.map(|(n, _)| crate::effects::send_wave(n)))
         .child(dock)
 }
 

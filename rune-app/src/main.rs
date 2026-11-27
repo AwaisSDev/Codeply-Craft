@@ -400,12 +400,6 @@ export function launch(date: Date) {
 "##.into()));
         s.data.threads.push(("Casual chat".into(), items));
     }),
-    // A message just went: the send wave rising out of the composer.
-    ("chat-sent", |s| {
-        s.open_chat("Casual chat");
-        s.waves = 1;
-        s.wave = Some((1, std::time::Instant::now() + std::time::Duration::from_secs(60)));
-    }),
     // Send now pressed: the reply stopping for the queued message.
     ("chat-sending", |s| {
         s.open_chat("Casual chat");
